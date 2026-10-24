@@ -1118,7 +1118,7 @@ static uint16_t calcCupMatchGateReceiptsFactor(TeamFileEx *team1, TeamFileEx *te
  * Complex dispatcher that calculates gate receipts based on competition type.
  */
 __attribute__((used, externally_visible))
-void UpdateCareerFinancesAfterMatch(DIYCompetitionEx *comp, TeamFileEx *team) {
+void UpdateCareerFinancesAfterMatch(DIYCompetitionEx *comp, TeamFileEx *team, TeamFileEx *opponent) {
     if (_isNationalSelector != 0)
         return;
 
@@ -1152,10 +1152,9 @@ void UpdateCareerFinancesAfterMatch(DIYCompetitionEx *comp, TeamFileEx *team) {
     }
 
 league_match:
-    d7 = calcLeagueMatchGateReceiptsFactor(team, team /* a2 not used directly, see asm */);
-    /* Actually, asm passes a1=team, a2=team2 separately. For the C version,
-       the league path doesn't use the factor from the cup table;
-       instead it computes a full gate receipt factor from team rank. */
+    /* a1 = the home side, a2 = the opponent (SWOS2.s: CalcLeagueMatchGateReceiptsFactor
+     * weighs both clubs; the C used to pass the home team twice). */
+    d7 = calcLeagueMatchGateReceiptsFactor(team, opponent);
     {
         int16_t isDiy = comp->base.hasGroups;  /* 0x48 */
         if (isDiy != 0) {
@@ -1212,13 +1211,23 @@ league_match:
         int16_t receiptIndex = d3 + (int16_t)factorFromRange;
         _ballSpeed = (uint16_t)receiptIndex;
 
-        /* Multiply by crowd factor from avgSkill (0x30), divide by avg player price */
+        /* Multiply by crowd factor from avgSkill (0x30), divide by avg player price.
+         *
+         * The divisor is GetAveragePlayerPrice(careerTeam) itself (SWOS2.s: `lea careerTeam,a0;
+         * jsr GetAveragePlayerPrice; divu.w d0,d1`), the squad's average price INDEX -- not
+         * the team value CalcGateReceiptsBaseFromTeamValue makes of it, which only the two
+         * factor helpers use. Dividing by that value (thousands, not tens) left nothing:
+         * league home games paid no gate at all, while cup games did (reports: "no gate
+         * receipts for league games, only for cups"; fired for losing money). */
         int8_t crowdFactor = (int8_t)comp->base.avgSkill;  /* 0x30 */
         uint32_t product = (uint32_t)(uint16_t)receiptIndex * (uint16_t)(int16_t)crowdFactor;
-        uint16_t avgPrice = getTeamValueForGateReceipts(&_careerTeam);
+        uint16_t avgPrice = GetAveragePlayerPrice(&_careerTeam);
         if (avgPrice == 0) avgPrice = 1; /* safety */
         uint16_t priceRatio = (uint16_t)(product / (uint32_t)avgPrice);
-        int16_t gateFactorResult = (int16_t)((int16_t)d7 * (int16_t)priceRatio) / 100;
+        /* muls.w d1,d7 is a 32-bit product, divs.w #100 then divides it: the product must not
+         * be cut to 16 bits first, as it was. */
+        int32_t gateProduct = (int32_t)(int16_t)d7 * (int32_t)(int16_t)priceRatio;
+        int16_t gateFactorResult = (int16_t)(gateProduct / 100);
         _gateReceiptsFactor = gateFactorResult;
         d7 = (uint32_t)(uint16_t)gateFactorResult;
         goto compute_receipts;
@@ -1227,7 +1236,7 @@ league_match:
 cup_match_type4:
     /* compType 4 falls through to cupMatchType1or2 */
 cup_match_type1or2:
-    d7 = calcCupMatchGateReceiptsFactor(team, team);
+    d7 = calcCupMatchGateReceiptsFactor(team, opponent);
     {
         if (compType != 4) {
             /* compType 1 or 2: cup match */
@@ -1249,7 +1258,7 @@ cup_match_type1or2:
     }
 
 diy_comp_match:
-    d7 = calcCupMatchGateReceiptsFactor(team, team);
+    d7 = calcCupMatchGateReceiptsFactor(team, opponent);
     {
         int16_t isDiy = comp->base.hasGroups;  /* 0x48 */
         if (isDiy == 0) {

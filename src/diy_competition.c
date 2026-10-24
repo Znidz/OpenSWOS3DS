@@ -10264,8 +10264,8 @@ static void updateCareerAfterResult(TeamFileEx *team1, TeamFileEx *team2,
     /* Update player form: a0=diyCompetitionStart, a1=team1, a2=team2, d1=goals1, d2=goals2 */
     UpdateCareerPlayersFormAfterMatch(&_diyCompetitionStart, team1, team2, d1, d2);
 
-    /* Begin contract negotiation: a0=diyCompetitionStart, a1=team1 */
-    BeginContractNegotiationSequence(&_diyCompetitionStart, team1);
+    /* Begin contract negotiation: a0=diyCompetitionStart, a1=team1, a2=team2 */
+    BeginContractNegotiationSequence(&_diyCompetitionStart, team1, team2);
 
     _careerTeamLostMatch = 0;
 

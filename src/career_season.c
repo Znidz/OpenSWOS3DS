@@ -699,9 +699,11 @@ extern void Career_MaybeGenerateJobOffer(void);
  * Called after a career match to begin contract negotiation phase.
  * Sets up negotiation globals, commits finances, processes offer expiry,
  * and potentially generates a new job offer.
- * a0=comp (diyCompetitionStart), a1=team ptr passed through to UpdateCareerFinancesAfterMatch. */
+ * a0=comp (diyCompetitionStart), a1=team (the home side), a2=opponent: both passed through to
+ * UpdateCareerFinancesAfterMatch, whose gate factors weigh the two clubs (the original keeps
+ * a2 from the result code; the C used to pass the home team twice). */
 __attribute__((used, externally_visible))
-void BeginContractNegotiationSequence(DIYCompetitionEx *comp, TeamFileEx *team)
+void BeginContractNegotiationSequence(DIYCompetitionEx *comp, TeamFileEx *team, TeamFileEx *opponent)
 {
     _contractNegotiationActive = 1;
     _timeToNegotiate = 2;
@@ -709,7 +711,7 @@ void BeginContractNegotiationSequence(DIYCompetitionEx *comp, TeamFileEx *team)
     _offerNegotiationAttemptCount = 0;
     Career_CommitNewBalanceAndResetFinanceTotals();
     _financeTotalsNeedResetFlag = 1;
-    UpdateCareerFinancesAfterMatch(comp, team);
+    UpdateCareerFinancesAfterMatch(comp, team, opponent);
     ProcessOfferExpiryCountdown();
     JobOffers_MaybeExpireSomeNewOffers();
     Career_MaybeGenerateJobOffer();

@@ -209,6 +209,19 @@ void Platform_HudLayerMark(int x, int y, int w, int h)
     s_hud_stamp = Platform_NowMs();
 }
 
+/* The match is paused: the frame on screen is shown again and again and nothing draws, so
+ * both 100 ms freshness rules below would take its HUD (the clock, the team names, the
+ * score) and its sub-pixel scroll away a moment after P (report 0043). The pause loop
+ * (pauseSpinWaitOneTick) calls this before each present to keep them, as drawn. Menus
+ * never pause, so they still decay out there. */
+void Platform_KeepFrameFresh(void)
+{
+    extern void Render_KeepScrollSubpixel(void);
+    if (s_hud_stamp)
+        s_hud_stamp = Platform_NowMs();
+    Render_KeepScrollSubpixel();
+}
+
 /* Is there a HUD layer worth presenting this frame? Same 100 ms freshness rule
  * as the scroll residual: menus never draw these sprites, so they decay out
  * instead of leaving a stale clock floating over the frontend. */

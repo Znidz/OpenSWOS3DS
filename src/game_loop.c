@@ -255,11 +255,15 @@ static void waitVBlankSync(uint32_t xorMagic, uint32_t expected)
  * the paused frame stays on screen. */
 #ifdef SWOS_SDL_BUILD
 extern int Platform_VBlank(void);
+extern void Platform_KeepFrameFresh(void);
 #endif
 
 static void pauseSpinWaitOneTick(void)
 {
 #ifdef SWOS_SDL_BUILD
+    /* The paused frame keeps its HUD and sub-pixel scroll, which otherwise expire
+     * when nothing draws (report 0043: the clock and names vanished on P). */
+    Platform_KeepFrameFresh();
     Platform_VBlank();
 #else
     uint16_t d0;

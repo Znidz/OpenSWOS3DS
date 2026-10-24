@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -49,5 +50,13 @@ std::vector<DirEntry> ListDir(const std::string& dir);
 // Folders the PC game may have been installed to by GOG: Windows' GOG registry
 // entries whose name has "Sensible" in it, and the GOG Games folders.
 std::vector<std::string> GogInstallDirs();
+
+// Set an environment variable for this process, unless it is set already.
+void SetEnvDefault(const char* name, const char* value);
+
+// The setup's log, `path`, written afresh (its folder made if need be). On Windows, a
+// program started from Explorer has no stderr; then stderr goes to the log too, so what
+// a library prints before it gives up is kept. NULL when it cannot be opened.
+FILE* OpenLog(const std::string& path);
 
 }  // namespace sd

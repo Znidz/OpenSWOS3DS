@@ -16,6 +16,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <io.h>
 #else
 #include <cerrno>
 #include <climits>
@@ -314,6 +315,32 @@ std::vector<std::string> GogInstallDirs() {
       if (d.dir && d.path.find("Sensible") != std::string::npos) out.push_back(d.path);
   }
   return out;
+}
+
+void SetEnvDefault(const char* name, const char* value) {
+#ifdef _WIN32
+  // Both the C runtime's copy and the process's own block, which Rust code reads.
+  if (GetEnvironmentVariableA(name, nullptr, 0) != 0) return;
+  _putenv_s(name, value);
+  SetEnvironmentVariableA(name, value);
+#else
+  setenv(name, value, 0);
+#endif
+}
+
+FILE* OpenLog(const std::string& path) {
+  std::error_code ec;
+  fs::create_directories(U8Path(ParentDir(path)), ec);
+#ifdef _WIN32
+  FILE* f = _wfopen(Widen(path).c_str(), L"w");
+  if (!f) return nullptr;
+  const HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+  if (err == nullptr || err == INVALID_HANDLE_VALUE)
+    SetStdHandle(STD_ERROR_HANDLE, reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(f))));
+  return f;
+#else
+  return std::fopen(path.c_str(), "w");
+#endif
 }
 
 }  // namespace sd

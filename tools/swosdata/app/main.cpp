@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
+#include <ctime>
 #include <functional>
 #include <map>
 #include <memory>
@@ -264,7 +265,16 @@ struct App {
 
   MainWindow& w() { return **ui; }
 
+  // setup.log (beside the assets folder): what happened, for a report.
+  FILE* logFile = nullptr;
+  void FileLog(const std::string& line) {
+    if (!logFile) return;
+    std::fprintf(logFile, "%s\n", line.c_str());
+    std::fflush(logFile);
+  }
+
   void Notice(const std::string& text, bool error) {
+    if (!text.empty()) FileLog((error ? "notice (error): " : "notice: ") + text);
     w().set_notice(Str(text));
     w().set_notice_error(error);
   }
@@ -664,7 +674,10 @@ struct App {
     }
   }
 
-  void Log(const std::string& line) { log->push_back(Str(line)); }
+  void Log(const std::string& line) {
+    FileLog(line);
+    log->push_back(Str(line));
+  }
 
   // Runs on the UI thread: move what the worker produced into the window.
   void Flush() {
@@ -818,10 +831,12 @@ struct App {
       game = FindGame(exeDir);
       w().set_can_play(!game.empty());
       w().set_status(Str("Done. The game's data is in " + Shown(outDir) + "."));
+      FileLog("install done: " + Shown(outDir));
       exitCode = 0;
     } else {
       w().set_status_error(true);
       w().set_status(Str("Failed: " + err));
+      FileLog("install failed: " + err);
       Log("failed: " + err);
       exitCode = 1;
     }
@@ -846,6 +861,7 @@ struct App {
     } else {
       w().set_status_error(true);
       w().set_status(Str("Could not start " + game + "."));
+      FileLog("could not start " + game);
     }
   }
 
@@ -1023,6 +1039,7 @@ struct App {
               : "Done: " + Shown(dest) + ". Unpack it on your Amiga (lha x OpenSWOSAGA-WHDL.lha), open the OpenSWOSAGA-NE drawer and double-click OpenSWOS."));
         else {
           w().set_amiga_status(Str("Failed: " + msg));
+          FileLog("amiga failed: " + msg);
           Log("failed: " + msg);
         }
         exitCode = rc == 0 ? 0 : 1;
@@ -1232,6 +1249,13 @@ int Usage() {
 }  // namespace
 
 int main(int argc, char** argv) {
+#if !defined(__APPLE__)
+  // Slint's default renderer needs OpenGL, and without it (a virtual machine, Remote
+  // Desktop, a bare graphics driver) it stops the program before the window opens -- it
+  // does not fall back to another. The software renderer draws this window the same and
+  // needs nothing. SLINT_BACKEND set by the user still wins. (Every Mac has the GPU.)
+  sd::SetEnvDefault("SLINT_BACKEND", "winit-software");
+#endif
   App app;
   app.exeDir = sd::ExeDir();
   std::vector<std::string> scans;
@@ -1289,6 +1313,21 @@ int main(int argc, char** argv) {
   const std::string base = !dl.empty() ? dl : app.exeDir;
   app.drawerTo = !drawerArg.empty() ? drawerArg : Join(base, "OpenSWOS-Amiga");
   app.whdloadTo = !whdloadArg.empty() ? whdloadArg : Join(base, "OpenSWOSAGA-WHDL.lha");
+
+  // setup.log, beside the assets folder the game reads, before anything touches Slint:
+  // if the window cannot open, what Slint says about it lands here (sd::OpenLog).
+  app.logFile = sd::OpenLog(Join(sd::ParentDir(app.defaultOutDir), "setup.log"));
+  {
+    const std::time_t now = std::time(nullptr);
+    char when[32];
+    std::strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+    const char* backend = std::getenv("SLINT_BACKEND");
+    app.FileLog(std::string("OpenSWOS Setup ") + SD_VERSION + ", " + when);
+    app.FileLog("renderer: " + std::string(backend && *backend ? backend : "Slint's default"));
+    app.FileLog("program: " + Shown(app.exeDir));
+    app.FileLog("game's files: " + (app.resDir.empty() ? std::string("(not found)") : Shown(app.resDir)));
+    app.FileLog("install to: " + Shown(app.outDir));
+  }
 
   // Wayland matches this against a .desktop file for the icon; X11 and
   // Windows/macOS use the Window's own icon.

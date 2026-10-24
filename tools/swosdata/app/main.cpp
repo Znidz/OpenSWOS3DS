@@ -160,6 +160,11 @@ std::string FindResDir(const std::string& exeDir) {
   if (sd::IsFile(Join(exeDir, "setup/glyphs.txt"))) return exeDir;
 #if defined(__APPLE__)
   {
+    // Its own copy, inside the bundle: found wherever macOS runs it from.
+    const std::string res = Join(sd::ParentDir(exeDir), "Resources");
+    if (sd::IsFile(Join(res, "setup/glyphs.txt"))) return res;
+  }
+  {
     const std::string mac = GameAppMacOSDir(exeDir);
     if (!mac.empty() && sd::IsFile(Join(mac, "setup/glyphs.txt"))) return mac;
   }
@@ -246,6 +251,7 @@ struct App {
   slint::ComponentHandle<MainWindow>* ui = nullptr;
   SdSources src{};
   std::string outDir, defaultOutDir, resDir, exeDir, game;
+  std::string standing;   // a notice that stays (macOS App Translocation)
   // The Amiga tab: the program (a folder with SWOS.info and the SWOS drawer), and
   // where the drawer or the WHDLoad package goes.
   std::string amigaProgram, drawerTo, whdloadTo;
@@ -275,8 +281,10 @@ struct App {
 
   void Notice(const std::string& text, bool error) {
     if (!text.empty()) FileLog((error ? "notice (error): " : "notice: ") + text);
-    w().set_notice(Str(text));
-    w().set_notice_error(error);
+    // A standing notice stays under whatever else is said, until the program quits.
+    if (standing.empty()) w().set_notice(Str(text));
+    else w().set_notice(Str(text.empty() ? standing : text + "\n\n" + standing));
+    w().set_notice_error(error || (text.empty() && !standing.empty()));
   }
 
   // ------------------------------------------------------------ the rows ---
@@ -1349,6 +1357,18 @@ int main(int argc, char** argv) {
   // What the last install was made from (ASSETS.ini), where --scan found nothing.
   SwosData_LoadSources(app.outDir.c_str(), &app.src);
   app.Refresh();
+#if defined(__APPLE__)
+  // Gatekeeper's App Translocation: an unsigned app opened where it was unzipped
+  // runs from a random read-only copy, where SWOS.app beside it cannot be seen.
+  // Moving the folder with Finder ends it.
+  if (app.exeDir.find("/AppTranslocation/") != std::string::npos) {
+    app.FileLog("running translocated: " + Shown(app.exeDir));
+    app.standing = "macOS is running this app from a hidden copy, so Play cannot find SWOS.app "
+                   "beside it. To fix it, move the OpenSWOS folder somewhere else with Finder "
+                   "(your Desktop or Applications) and open the setup from there.";
+    app.Notice("", true);
+  } else
+#endif
   if (app.resDir.empty())
     app.Notice("The game's own files (setup/glyphs.txt) were not found beside this program. "
                "Start it with --res DIR, or install the game first.",

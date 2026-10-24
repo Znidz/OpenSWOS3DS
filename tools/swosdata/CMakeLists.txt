@@ -149,6 +149,22 @@ if(SD_WITH_APP)
         list(APPEND SD_PLATFORM_SOURCES "${SD_ICNS}")
         set_source_files_properties("${SD_ICNS}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
       endif()
+      # The game's own files inside the bundle too (Contents/Resources, laid out as
+      # bin/ is; FindResDir looks there first): Gatekeeper runs an unsigned app
+      # opened where it was unzipped from a random read-only copy (App
+      # Translocation), where nothing beside the .app can be seen. Named, not
+      # globbed: a drop carries tracked files only.
+      set(SD_RES_FILES
+          setup/glyphs.txt setup/LOADER1_AGA.bmp setup/MENUS2_AGA.bmp
+          setup/CJCTEAM1_CELEB.bmp setup/CJCTEAM2_CELEB.bmp setup/CJCTEAM3_CELEB.bmp
+          setup/whdload/OpenSWOS.info setup/whdload/OpenSWOSAGA-NE.info
+          data/credits_icons.bmp)
+      foreach(f ${SD_RES_FILES})
+        get_filename_component(d "${f}" DIRECTORY)
+        list(APPEND SD_PLATFORM_SOURCES "${OPENSWOS_ROOT}/bin/${f}")
+        set_source_files_properties("${OPENSWOS_ROOT}/bin/${f}" PROPERTIES
+            MACOSX_PACKAGE_LOCATION "Resources/${d}")
+      endforeach()
     endif()
 
     set_property(GLOBAL PROPERTY SLINT_STYLE fluent-dark)

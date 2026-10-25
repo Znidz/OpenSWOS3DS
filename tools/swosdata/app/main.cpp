@@ -14,7 +14,7 @@
 //   openswos-setup [--res DIR] [--scan DIR]... [--out DIR] [--amiga]
 //                  [--program DIR] [--drawer-to DIR | --whdload-to FILE]
 //   testing:       [--auto] [--snapshot PREFIX] [--snapshot-at MS] [--quit] [--play]
-//                  [--no-watch] [--details] [--downloads DIR] [--no-gog]
+//                  [--no-watch] [--details] [--about] [--downloads DIR] [--no-gog]
 //
 // --auto presses the open tab's button once the window is up; --snapshot writes
 // PREFIX-start.ppm and, with --auto, PREFIX-done.ppm; --quit closes the window
@@ -1247,7 +1247,7 @@ int Usage() {
       "  --whdload-to FILE make the WHDLoad package FILE (the Amiga tab)\n"
       "testing: --auto (press the tab's button)  --snapshot PREFIX  --quit  --play\n"
       "         --snapshot-at MS (when the -start snapshot is taken; 1200)\n"
-      "         --no-watch (leave the Downloads folder alone)  --details\n"
+      "         --no-watch (leave the Downloads folder alone)  --details  --about\n"
       "         --downloads DIR (watch DIR instead)  --no-gog (no GOG install lookup)\n",
       SD_VERSION);
   std::fflush(stdout);
@@ -1268,7 +1268,7 @@ int main(int argc, char** argv) {
   app.exeDir = sd::ExeDir();
   std::vector<std::string> scans;
   std::string resArg, outArg, programArg, drawerArg, whdloadArg;
-  bool amigaTab = false, watch = true, details = false;
+  bool amigaTab = false, watch = true, details = false, about = false;
   int snapshotAt = 1200;
 
   for (int i = 1; i < argc; i++) {
@@ -1286,6 +1286,8 @@ int main(int argc, char** argv) {
       watch = false;
     } else if (a == "--details") {
       details = true;
+    } else if (a == "--about") {
+      about = true;
     } else if (a == "--no-gog") {
       app.lookForGog = false;
     } else if (a == "--help" || a == "-h") {
@@ -1346,6 +1348,8 @@ int main(int argc, char** argv) {
   app.pipe.flush = [&app] { app.Flush(); };
   ui->set_log(app.log);
   ui->set_tab(amigaTab ? 1 : 0);
+  ui->set_version(SD_VERSION);
+  ui->set_show_about(about);
   ui->set_show_details(details);
   if (!whdloadArg.empty()) ui->set_amiga_kind(1);
 #ifndef SD_WITH_DIALOGS

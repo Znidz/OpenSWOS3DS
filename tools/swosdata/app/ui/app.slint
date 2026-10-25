@@ -353,6 +353,8 @@ export component MainWindow inherits Window {
     in property <bool> scanning;
     in property <string> scan-status;
     in-out property <bool> show-details;
+    in property <string> version;
+    in-out property <bool> show-about;
 
     // The Amiga tab: 0 a drawer, 1 the WHDLoad package; where it goes; what it is made
     // from (the setup's own copy of the program, or a drawer the player unpacked).
@@ -416,6 +418,14 @@ export component MainWindow inherits Window {
                     text: "OpenSWOS plays with the data of a copy of Sensible World of Soccer you own. Get it from the links below: what you download is found here by itself.";
                     wrap: word-wrap;
                     color: Theme.text-dim;
+                }
+            }
+            VerticalLayout {
+                alignment: start;
+                IconButton {
+                    icon: @image-url("icons/info-circle.svg");
+                    tooltip: "About";
+                    clicked => { root.show-about = true; }
                 }
             }
         }
@@ -711,6 +721,101 @@ export component MainWindow inherits Window {
                 PlanColumn { steps: root.plan-right; }
             }
             if root.show-details: LogView { lines: root.log; }
+        }
+    }
+
+    // About: who made it, and Slint's "Made with Slint" badge, which its royalty-free
+    // licence asks every Slint program to show. Over the window; a click outside or OK
+    // closes it.
+    if root.show-about: Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        background: #00000090;
+        TouchArea { clicked => { root.show-about = false; } }
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: about.preferred-width;
+            height: about.preferred-height;
+            background: Theme.panel;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.line;
+            drop-shadow-blur: 16px;
+            drop-shadow-color: #00000080;
+            TouchArea { }   // a click on the panel is not a click outside it
+
+            about := VerticalLayout {
+                padding: 20px;
+                spacing: 14px;
+                HorizontalLayout {
+                    spacing: 16px;
+                    Image {
+                        source: @image-url("../../../../packaging/linux/hicolor/64x64/apps/openswos.png");
+                        width: 64px;
+                        height: 64px;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        Text {
+                            text: "OpenSWOS Setup " + root.version;
+                            font-size: 20px;
+                            font-weight: 700;
+                            color: Theme.text;
+                        }
+                        Text {
+                            text: "by Ben Baker";
+                            color: Theme.text-dim;
+                        }
+                        Link {
+                            text: "github.com/benbaker76/OpenSWOS";
+                            url: "https://github.com/benbaker76/OpenSWOS";
+                            open(u) => { root.open-url(u); }
+                        }
+                    }
+                }
+                // Baker76's lettering is drawn for a dark ground.
+                Rectangle {
+                    background: Theme.chrome;
+                    border-radius: 8px;
+                    HorizontalLayout {
+                        alignment: center;
+                        padding: 14px;
+                        Image {
+                            height: 36px;
+                            width: 36px * 1008.38 / 162.4;
+                            source: @image-url("images/baker76.svg");
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.open-url("https://baker76.com"); }
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Image {
+                        height: 56px;
+                        width: self.height * 212 / 97;
+                        source: @image-url("images/made-with-slint.svg");
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.open-url("https://slint.dev"); }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    TextButton {
+                        label: "OK";
+                        primary: true;
+                        clicked => { root.show-about = false; }
+                    }
+                }
+            }
         }
     }
 }

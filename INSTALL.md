@@ -230,5 +230,6 @@ Saves are in `save`, the settings in `SWOS.ini` ([docs/SETTINGS.md](docs/SETTING
 the game data from the setup in `assets`. Reinstalling or updating OpenSWOS never touches
 them.
 
-**Still stuck?** Ask on the [OpenSWOS page on itch.io](https://baker76.itch.io/openswos), and
-include what your `SWOS.log` says.
+**Still stuck, or found a bug?** Please report it on
+[github.com/benbaker76/OpenSWOS/issues](https://github.com/benbaker76/OpenSWOS/issues): say which version you have (the bottom
+line of the main menu) and what happened, and attach your `SWOS.log`.

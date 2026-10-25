@@ -94,6 +94,7 @@ void InputSDL_ClearKeyState(void);
  * the buffer the game last drew into. */
 extern volatile uintptr_t _frontbufferBasePtr;
 extern volatile uintptr_t _frontbufferBaseAltPtr;
+extern volatile uint16_t _gTextInputActive;   /* input_text.c: a name is being typed */
 extern uint8_t  _frontbufferBase[];
 extern uint8_t  _frontbufferBaseAlt[];
 extern uint8_t  _frontbufferMaskBuffer[];
@@ -1618,15 +1619,16 @@ static void pump_events_any_thread(void)
              * same physical key as SDLK_PLUS on most layouts (US),
              * so we accept either. Swallowed so they don't reach the
              * menu/game layer. No-op while fullscreen (the runtime
-             * scaler ignores the size change). */
-            if (ev.key.repeat == 0 &&
+             * scaler ignores the size change). Not while a name is being
+             * typed: '-' is a letter there. */
+            if (ev.key.repeat == 0 && !_gTextInputActive &&
                 (ev.key.keysym.sym == SDLK_EQUALS ||
                  ev.key.keysym.sym == SDLK_PLUS   ||
                  ev.key.keysym.sym == SDLK_KP_PLUS)) {
                 Platform_SetWindowScale(s_win_scale_current + 1);
                 continue;
             }
-            if (ev.key.repeat == 0 &&
+            if (ev.key.repeat == 0 && !_gTextInputActive &&
                 (ev.key.keysym.sym == SDLK_MINUS ||
                  ev.key.keysym.sym == SDLK_KP_MINUS)) {
                 Platform_SetWindowScale(s_win_scale_current - 1);

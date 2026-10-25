@@ -1,7 +1,7 @@
 {
  "name": "_optionsMenu",
  "onInit": "OptionsMenuBeforeDraw",
- "onReturn": null,
+ "onReturn": "OptionsMenuBeforeDraw",
  "onDraw": null,
  "defaultEntry": 19,
  "items": [

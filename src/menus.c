@@ -2009,7 +2009,8 @@ void SquadInit(void)
 
 extern uint16_t _showPrereleaseCounter;
 
-/* OptionsMenuBeforeDraw: clears prerelease counter on menu entry */
+/* OptionsMenuBeforeDraw: clears prerelease counter on menu entry. Also the onReturn:
+ * coming back from CONTROLS unpacks the menu again, rows 17/18 visible. */
 __attribute__((used, externally_visible))
 void OptionsMenuBeforeDraw(void)
 {
@@ -2105,6 +2106,12 @@ __attribute__((used, externally_visible))
 void ChangeMenuMusic(MenuEntry *entry)
 {
     _menuMusic ^= 1;
+#ifdef SWOS_SDL_BUILD
+    if (_menuMusic == 0) {
+        extern void StopMusicInBackground(void);
+        StopMusicInBackground();    /* fades while the menu goes on */
+    } else
+#endif
     TryRestartingMusic();
     CallDrawMenuItem(entry);
 }

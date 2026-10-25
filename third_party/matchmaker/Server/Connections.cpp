@@ -163,13 +163,33 @@ void Connections::BroadcastActiveUsers() const
     BroadcastMessage(Message::Make(MessageType::PlayersActive, userList));
     BroadcastOpenGames();
 }
+// OpenSWOS: who can play whom, from the VERSION: tag. OPENSWOS/<n> and OPENSWOS-WEB/<n>
+// play any OpenSWOS with the same <n> (NETPLAY_COMPAT, include/netplay_compat.h): the
+// games' handshake refuses any other, so a player is never shown a game they cannot
+// join. An OpenSWOS from before the number ("OPENSWOS", its handshake compares the
+// commit) plays only those; any other client (SWOS 2020's) only its own tag.
+static std::string PlayKey(const std::string& version)
+{
+    const std::string ours = "OPENSWOS";
+    if (version.compare(0, ours.size(), ours) != 0)
+        return version;
+    const auto slash = version.rfind('/');
+    return slash == std::string::npos ? ours : ours + "/" + version.substr(slash + 1);
+}
+
 void Connections::BroadcastOpenGames() const
 {
-    std::string gamelist;
-    for (const auto& g : m_games)
-        gamelist += g.ShortInfo() + ",";
-
-    BroadcastMessage(Message::Make(MessageType::GamesOpen, gamelist));
+    // Each player gets the games they could play.
+    for (User* u : ActivePlayers())
+    {
+        const std::string key = PlayKey(u->Version());
+        std::string gamelist;
+        for (const auto& g : m_games)
+            if (PlayKey(g.CreatedBy()->Version()) == key)
+                gamelist += g.ShortInfo() + ",";
+        Message::Make(MessageType::GamesOpen, gamelist).OnData(SendTo(u->Peer()));
+    }
+    std::cout << "Broadcast message: " << (int)MessageType::GamesOpen << "\n";
 }
 void Connections::Update()
 {
@@ -185,6 +205,9 @@ bool Connections::RequestToJoin(User* requestor, const std::string& nameOfGame)
 {
     auto it  = std::find_if(RANGE(m_games), [&](const Game& g) {return g.WasCreatedBy(nameOfGame); });
     if (it == std::end(m_games))
+        return false;
+    // Not a game this player was shown (BroadcastOpenGames): the two would not play.
+    if (PlayKey(it->CreatedBy()->Version()) != PlayKey(requestor->Version()))
         return false;
     auto joined = it->RequestUserJoin(requestor);
     if (joined)

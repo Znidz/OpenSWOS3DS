@@ -30,7 +30,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "build_info.h"      /* Build_Id: the handshake compares builds */
+#include "build_info.h"      /* Build_Id: the handshake logs builds */
+#include "netplay_compat.h"  /* NETPLAY_COMPAT: and compares this */
 
 #ifdef SWOS_NETPLAY
 
@@ -56,7 +57,8 @@
  * generation, so a peer can replace what it sent (the lobby's selections). 3: every
  * packet ends in a checksum (wire_send), and the match's GGPO packets carry a keyed one
  * whose key the lobby's START hands over. */
-enum { kProtocol = 4 };      /* 4: the setup carries the build (2026-09-27) */
+enum { kProtocol = 5 };      /* 4: the setup carries the build (2026-09-27); 5: and
+                              * NETPLAY_COMPAT, compared in its place (2026-10-25) */
 
 enum {
     PKT_HELLO = 1, PKT_WELCOME = 2, PKT_REFUSE = 3,
@@ -68,7 +70,7 @@ enum {
 
 enum {
     kHeaderLen  = 8,
-    kSetupLen   = 28,   /* header + the setup fields + the build id */
+    kSetupLen   = 32,   /* header + the setup fields + the build id + compat, flags */
     kRefuseLen  = 9,
     kPingLen    = 12,
     kDelayLen   = 9,
@@ -119,7 +121,9 @@ typedef struct {
     uint32_t stateHi, stateLo;
     uint16_t screenWidth;
     uint8_t  gameplay;          /* bit 0 DOS gameplay, 1 arcade, 2 the original fire-hold lockout */
-    char     build[9];          /* Build_Id()'s first 8: the commit, and '-' if it was dirty */
+    char     build[9];          /* Build_Id()'s first 8: the commit, for the log */
+    uint16_t compat;            /* NETPLAY_COMPAT: what is compared */
+    uint8_t  dirty;             /* built from uncommitted changes: plays only its commit */
 } Setup;
 
 /* The message being sent on one channel. Sending again replaces it: the new one
@@ -261,21 +265,30 @@ static void setup_local(Setup *s)
     s->gameplay    = P2PLink_GameplayFlags();
     memset(s->build, 0, sizeof s->build);
     strncpy(s->build, Build_Id(), 8);
+    s->compat = NETPLAY_COMPAT;
+    s->dirty  = strstr(Build_Id(), "-dirty") != NULL;
 }
 
 static P2PLinkFailure setup_mismatch(const Setup *mine, const Setup *theirs)
 {
-    /* The SAME BUILD, before anything finer. The state layout below catches a build
-     * whose match state has a different shape, but two builds with the same shape and
-     * different behaviour played each other and went out of step in the middle of a
-     * match -- and a tester on last week's game got bug reports filed against this
-     * week's (2026-09-27: c1f49c0 against 31f8aef). The commit, with '-' for a build
-     * made from uncommitted changes, which is not the commit it says. */
-    if (memcmp(mine->build, theirs->build, 8) != 0) {
-        fprintf(stderr, "[p2p] the other player runs build %.8s, this is %.8s: refused\n",
-                theirs->build, mine->build);
+    /* A COMPATIBLE BUILD, before anything finer (include/netplay_compat.h). The state
+     * layout below catches a build whose match state has a different shape, but two
+     * builds with the same shape and different behaviour played each other and went
+     * out of step in the middle of a match (2026-09-27: c1f49c0 against 31f8aef). Until
+     * 2026-10-25 the commit itself had to match; now the number does, raised by
+     * whoever changes how a match plays. A build with uncommitted changes is not the
+     * commit it says, so its number vouches for nothing: it plays only its own commit. */
+    const int32_t sameCommit = memcmp(mine->build, theirs->build, 8) == 0;
+    if (mine->compat != theirs->compat || ((mine->dirty || theirs->dirty) && !sameCommit)) {
+        fprintf(stderr, "[p2p] the other player runs build %.8s (netplay %u%s), this is %.8s "
+                "(netplay %u%s): refused\n", theirs->build, (unsigned)theirs->compat,
+                theirs->dirty ? ", uncommitted changes" : "", mine->build, (unsigned)mine->compat,
+                mine->dirty ? ", uncommitted changes" : "");
         return P2P_FAIL_VERSION;
     }
+    if (!sameCommit)
+        fprintf(stderr, "[p2p] the other player runs build %.8s, this is %.8s: both netplay %u\n",
+                theirs->build, mine->build, (unsigned)mine->compat);
     if (mine->stateHi != theirs->stateHi || mine->stateLo != theirs->stateLo)
         return P2P_FAIL_STATE;
     /* The build's rules first: nothing in OPTIONS can make those agree. */
@@ -318,6 +331,9 @@ static void pkt_write_setup(uint8_t *p, const Setup *s)
     p[18] = s->gameplay;
     p[19] = 0;
     memcpy(p + 20, s->build, 8);
+    BE_WRITE_U16(p + 28, s->compat);
+    p[30] = s->dirty;
+    p[31] = 0;
 }
 
 static void pkt_read_setup(const uint8_t *p, Setup *s)
@@ -328,6 +344,8 @@ static void pkt_read_setup(const uint8_t *p, Setup *s)
     s->gameplay    = p[18];
     memcpy(s->build, p + 20, 8);
     s->build[8] = '\0';
+    s->compat      = BE_READ_U16(p + 28);
+    s->dirty       = p[30];
 }
 
 /* The self-test's lossy wire: drop every Nth datagram a link sends, and flip a bit in
@@ -2036,12 +2054,11 @@ int32_t P2PLink_SelfTest(void)
         check(host.state == P2P_HOSTING && host.notice == P2P_FAIL_VIEW, "the host says which view");
         link_close(&mismatched);
     }
-    /* 4b. Another build -- another commit, or the same one with uncommitted changes --
-     * is refused before anything else is compared. */
+    /* 4b. Another netplay number is refused before anything else is compared. */
     {
         Setup theirs;
         setup_local(&theirs);
-        theirs.build[7] = theirs.build[7] == '0' ? '1' : '0';   /* one digit of the commit */
+        theirs.compat++;
         memset(&mismatched, 0, sizeof mismatched); mismatched.sock = -1; mismatched.pingMs = -1;
         mismatched.joinTimeoutMs = 1000;
         check(link_join(&mismatched, "127.0.0.1", host.localPort, &theirs) == 0, "another build joins");
@@ -2051,6 +2068,30 @@ int32_t P2PLink_SelfTest(void)
               "it is refused: a different build");
         check(host.state == P2P_HOSTING && host.notice == P2P_FAIL_VERSION, "the host says which build");
         link_close(&mismatched);
+    }
+    /* 4d. Another commit with the same number plays -- unless either side has
+     * uncommitted changes. */
+    for (int32_t dirty = 0; dirty <= 1; dirty++) {
+        Setup theirs;
+        const uint8_t hostDirty = host.local.dirty;
+        setup_local(&theirs);
+        theirs.build[7] = theirs.build[7] == '0' ? '1' : '0';   /* one digit of the commit */
+        theirs.dirty = (uint8_t)dirty;
+        host.local.dirty = 0;           /* whatever tree this test was built from */
+        memset(&mismatched, 0, sizeof mismatched); mismatched.sock = -1; mismatched.pingMs = -1;
+        mismatched.joinTimeoutMs = 1000;
+        check(link_join(&mismatched, "127.0.0.1", host.localPort, &theirs) == 0, "another commit joins");
+        P2PLink *two[2] = { &host, &mismatched };
+        pump(two, 2, 1500, link_settled, &mismatched);
+        if (dirty)
+            check(mismatched.state == P2P_FAILED && mismatched.failure == P2P_FAIL_VERSION,
+                  "with uncommitted changes it is refused");
+        else
+            check(mismatched.state == P2P_CONNECTED, "with the same netplay number it is let in");
+        link_close(&mismatched);
+        if (!dirty)     /* the host takes its next player once it has heard this one go */
+            pump(two, 1, 1500, host_waiting_again, &host);
+        host.local.dirty = hostDirty;
     }
 
     /* 5. Nobody there: the join gives up rather than hanging.
@@ -2176,7 +2217,7 @@ void P2PLink_FailureText(P2PLinkFailure failure, const char **line1, const char 
     case P2P_FAIL_PROTOCOL:
     case P2P_FAIL_STATE:
     case P2P_FAIL_VERSION:
-        *line1 = "THE OTHER PLAYER HAS ANOTHER VERSION"; *line2 = "BOTH OF YOU NEED THE SAME BUILD"; break;
+        *line1 = "THE OTHER PLAYER HAS ANOTHER VERSION"; *line2 = "ONE OF YOU NEEDS TO UPDATE"; break;
     case P2P_FAIL_GAMEPLAY:
         /* Not the style any more -- the joiner plays the host's -- but arcade mode or
          * the original's fire-hold lockout ([gameplay] fire_hold_lockout). */

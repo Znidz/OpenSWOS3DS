@@ -682,8 +682,17 @@ simulation depends on before a session starts, because a disagreement is a desyn
 first frame rather than an error:
 
 - the protocol version,
-- the build itself: the commit, with a mark for uncommitted changes (`P2P_FAIL_VERSION`,
-  "THE OTHER PLAYER HAS ANOTHER VERSION", since 2026-09-27),
+- a COMPATIBLE build: the same `NETPLAY_COMPAT` (`include/netplay_compat.h`,
+  `P2P_FAIL_VERSION`, "THE OTHER PLAYER HAS ANOTHER VERSION"). From 2026-09-27 to
+  2026-10-25 it had to be the same commit, which turned away most players who had not
+  updated that day. The number is raised by whoever changes how a match plays, and
+  `scripts/check_netplay_compat.sh` fails when the test recordings' SIM hashes change
+  and it was not (record: `tests/netplay_compat.txt`). A build with uncommitted changes
+  (a flag in the setup) plays only its own commit. Two different commits that DO agree
+  are logged (`[p2p] the other player runs build ...: both netplay N`), so a desync
+  between them is a missed raise. The matchmaking server lists a game only to players
+  with the same number (`VERSION:OPENSWOS/<n>`, `PlayKey` in `Connections.cpp`), so
+  nobody is shown a game the handshake would refuse,
 - `SimState_LayoutHash` — the shape of the state a rollback saves, so two builds whose
   match state differs refuse each other,
 - the rules: arcade mode and the original fire-hold lockout, which must match,
@@ -1517,7 +1526,7 @@ name (nothing is bound, and 0 stays 0), so the web build picks a random one for 
 (`open_socket`), or two browsers behind one address would both be `:0`.
 
 **A browser can only ever play through the relay** -- it reaches nothing but the server.
-It says so at login (`VERSION:OPENSWOS-WEB`, still `OPENSWOS` to every prefix test),
+It says so at login (`VERSION:OPENSWOS-WEB/<n>`, still `OPENSWOS` to every prefix test),
 and a server with `--websocket` relays any match with a browser in it, `--relay` or not
 (`Connections.cpp`). A START the server did not relay is refused on the waiting screen:
 "THIS SERVER CANNOT RELAY A BROWSER GAME". There are no local addresses to offer

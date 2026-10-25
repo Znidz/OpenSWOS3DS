@@ -19,6 +19,7 @@
  * and refusing to draw 64 users because a 65th appeared would be worse.
  */
 #include "mm_client.h"
+#include "netplay_compat.h"   /* NETPLAY_COMPAT: in the VERSION: tag */
 
 #ifdef SWOS_SDL_BUILD
 
@@ -100,15 +101,18 @@ uint16_t MmClient_DefaultPort(void)
 #  define MM_HAVE_IFADDRS 1
 #endif
 
-/* The compatibility tag sent as VERSION:. The server refuses a client whose tag
- * differs, which is what keeps a protocol change from meeting an old build. */
+/* The compatibility tag sent as VERSION:, OPENSWOS/<NETPLAY_COMPAT>: the server lists
+ * a game only to players whose number is the same (Connections.cpp, PlayKey), so a
+ * player never joins one the handshake would refuse (include/netplay_compat.h). */
+#define MM_STR_(x) #x
+#define MM_STR(x)  MM_STR_(x)
 #ifdef SWOS_WASM_BUILD
 /* The browser build says so: it can only play through the server, so the server
  * relays any match it is in (Connections.cpp). Still OPENSWOS to everything that
  * compares the prefix. */
-#define MM_GAME_ID_DEFAULT "OPENSWOS-WEB"
+#define MM_GAME_ID_DEFAULT "OPENSWOS-WEB/" MM_STR(NETPLAY_COMPAT)
 #else
-#define MM_GAME_ID_DEFAULT "OPENSWOS"
+#define MM_GAME_ID_DEFAULT "OPENSWOS/" MM_STR(NETPLAY_COMPAT)
 #endif
 
 /* ---- message headers, exactly as common/Message.cpp spells them ---- */

@@ -24,7 +24,7 @@ see `SDL_ONLY_SRCS` in `Makefile.amiga`.
 > the merge; fix it when you touch it.
 >
 > **OpenSWOS** (github.com/benbaker76/OpenSWOS) is the open-source release. Its wire/file
-> identifiers are its own (`VERSION:OPENSWOS`, GGPO session `openswos`, custom-team format
+> identifiers are its own (`VERSION:OPENSWOS/<NETPLAY_COMPAT>`, GGPO session `openswos`, custom-team format
 > `openswos-team`, ggpo-x branch `openswos`): a build of another fork with different ones
 > does not meet it online.
 
@@ -94,7 +94,12 @@ connect through `src/p2p_link.c` (docs/NETPLAY.md §6): a UDP handshake that ref
 or rules would desync the match (not the gameplay STYLE: a game plays its host's, picked at OPEN, and
 the joiner borrows it until they leave -- `GameplayStyle_Borrow`; and not the screen width: the two
 agree one simulation width), and shows the ping. `--netplay-selftest` runs it over
-loopback. A live match through the lobby, and a rematch after it, is `scripts/netplay_lobby_test.sh`
+loopback. **"Build" means `NETPLAY_COMPAT`** (`include/netplay_compat.h`, since 2026-10-25), not the
+commit: two commits with the same number play each other, and the server lists a game only to its
+number. **Raise it with any change to how a match plays, or to what the games say to each other**;
+`scripts/check_netplay_compat.sh` (the corpus's SIM hashes vs `tests/netplay_compat.txt`) fails when
+a raise is missing, `--update` after raising -- run it after touching the match. It cannot see a
+booking, a shoot-out, the lobby or the wire: those raises are yours to remember. A live match through the lobby, and a rematch after it, is `scripts/netplay_lobby_test.sh`
 (two instances through the real menus); run it after touching the lobby, the link, or how a live
 match starts or ends. A live match must never `exit()` or leave the frame loop: it ends through
 `liveEnd` and goes back to the lobby. Closing the window is one of the ways it ends ("YOU CLOSED THE

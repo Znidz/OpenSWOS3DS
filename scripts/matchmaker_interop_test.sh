@@ -85,16 +85,22 @@ round() {
     return 1
 }
 
+# The reference client says OUR tag: the server lists a game only to players with the
+# same one (Connections.cpp, PlayKey), and this test is about the messages, not about
+# SWOS 2020 and OpenSWOS meeting. NETPLAY_COMPAT from include/netplay_compat.h.
+COMPAT=$(sed -n 's/^#define NETPLAY_COMPAT \([0-9]*\).*/\1/p' include/netplay_compat.h)
+[ -n "$COMPAT" ] || { echo "no NETPLAY_COMPAT in include/netplay_compat.h" >&2; exit 1; }
+
 round 1 "the reference hosts, ours joins" \
-    "$REF" --role host --host 127.0.0.1 --port "$PORT" -- \
+    "$REF" --game-id "OPENSWOS/$COMPAT" --role host --host 127.0.0.1 --port "$PORT" -- \
     env SWOS_MM_PORT="$PORT" "$BIN" --matchmaker-pair=join || fail=1
 
 round 2 "ours hosts, the reference joins" \
     env SWOS_MM_PORT="$PORT" "$BIN" --matchmaker-pair=host -- \
-    "$REF" --role join --host 127.0.0.1 --port "$PORT" || fail=1
+    "$REF" --game-id "OPENSWOS/$COMPAT" --role join --host 127.0.0.1 --port "$PORT" || fail=1
 
 round 3 "the reference hosts WITH open-game data, ours joins" \
-    "$REF" --role host --host 127.0.0.1 --port "$PORT" --blob 16 -- \
+    "$REF" --game-id "OPENSWOS/$COMPAT" --role host --host 127.0.0.1 --port "$PORT" --blob 16 -- \
     env SWOS_MM_PORT="$PORT" "$BIN" --matchmaker-pair=join || fail=1
 
 echo

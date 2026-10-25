@@ -2,7 +2,9 @@
 <!--
   The changelog: the record of every drop. Releases are on itch.io
   (https://baker76.itch.io/openswos); each drop's entry also goes in its devlog post there.
-  (Until 2026-10-20 this page was published on baker76.com; it no longer is.)
+  Published at openswos.net/changelog.html and shown on the front page (packaging/web/site/
+  index.html) in a frame: after a drop, copy it to /var/www/openswos.net/ on the server.
+  Always dark, like the page it sits in. (Until 2026-10-20 it was on baker76.com.)
 
   ADDING A RELEASE: copy the first <article>, put the new build (the short hash the main
   menu shows) and its build time in it -- the commit and the "done" time in
@@ -15,6 +17,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenSWOS changelog</title>
+<meta name="color-scheme" content="dark">
+<base target="_top">
 <style>
   :root {
     --bg: #12160f;
@@ -23,16 +27,6 @@
     --text: #e8ece3;
     --muted: #9aa78e;
     --accent: #7fd34e;
-  }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #f4f6f1;
-      --panel: #ffffff;
-      --line: #d8ded0;
-      --text: #1a1f16;
-      --muted: #5d6a52;
-      --accent: #3d7a1c;
-    }
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text); }

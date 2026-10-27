@@ -224,12 +224,17 @@ int32_t LeaguePlayoffs_OutHeld(uint16_t pts16, uint16_t pts17)
 
 #define OUT_HELD(t) LeaguePlayoffs_OutHeld((t)[15].pts, (t)[16].pts)
 
+int32_t LeaguePlayoffs_PlayoffHeld(uint16_t pts3, uint16_t pts4)
+{
+    return !(pts3 > pts4 + 14) || LeaguePlayoffs_TestHeld;
+}
+
 static void serie_b(void)
 {
     int n = DP_IN.n[0];
     const struct dp_row *t = DP_IN.t[0];
     if (n < 17) return;
-    if (t[2].pts > t[3].pts + 14) {
+    if (!LeaguePlayoffs_PlayoffHeld(t[2].pts, t[3].pts)) {
         dp_move(2, -1);
     } else {
         int w58 = dp_tie(K_PRE, 4, 7, 1, 4), w67 = dp_tie(K_PRE, 5, 6, 1, 5);
@@ -578,6 +583,8 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
         DP_IN.po_win = DP_IN.out_win = 0;
         if (g_worldPlayoff.kind == WORLD_PLAYOFF_B_PLAYOUT)
             DP_IN.out_win = g_worldPlayoff.winner;
+        if (g_worldPlayoff.kind == WORLD_PLAYOFF_B_PLAYOFF)
+            DP_IN.po_win = g_worldPlayoff.winner;
         for (int32_t d = 0; d < NDIV; d++) {
             const int32_t src = d == 0 ? lp->serieB : lp->groupFirst + d - 1;
             DP_IN.n[d] = 0;

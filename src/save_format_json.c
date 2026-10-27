@@ -6014,6 +6014,9 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
         mjson_printf(json_out_emit, &out, "],%Q:[", "places");
         for (int i = 0; i < g_worldPlayoff.n; i++)
             mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)g_worldPlayoff.prio[i]);
+        mjson_printf(json_out_emit, &out, "],%Q:[", "points");
+        for (int i = 0; i < g_worldPlayoff.n; i++)
+            mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)g_worldPlayoff.pts[i]);
         mjson_printf(json_out_emit, &out, "%s", "]}");
     }
 
@@ -6446,6 +6449,11 @@ static void apply_semantic_load(const char *src, int src_size)
                 while (i < 8 && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
                     if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
                         g_worldPlayoff.prio[i++] = (uint8_t)v;
+            pos = 0; i = 0;
+            if (mjson_find(wp, wplen, "$.points", &arr, &al) == MJSON_TOK_ARRAY)
+                while (i < 8 && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
+                    if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
+                        g_worldPlayoff.pts[i++] = (uint16_t)v;
         }
     }
 

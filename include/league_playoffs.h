@@ -46,6 +46,8 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
 /* Serie B's play-out is held unless the 16th leads the 17th by more than 4 points
  * (dplay.c OUT_HELD); LeaguePlayoffs_TestHeld (a test switch) holds it anyway. */
 int32_t LeaguePlayoffs_OutHeld(uint16_t pts16, uint16_t pts17);
+/* Serie B's play-off is played unless the 3rd leads the 4th by more than 14 points. */
+int32_t LeaguePlayoffs_PlayoffHeld(uint16_t pts3, uint16_t pts4);
 extern int32_t LeaguePlayoffs_TestHeld;
 
 #endif

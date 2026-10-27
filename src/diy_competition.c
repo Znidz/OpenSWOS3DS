@@ -2800,6 +2800,8 @@ void DIY_UpdateCompetitionProgress(void)
 
     /* Reorder team grid by order list */
     DIY_ReorderTeamGridByOrderList();
+    /* A world's play-off: the next round its rules' ties, not the draw (world_playoff.c). */
+    WorldPlayoff_ArrangeNextRound();
 
     {
         uint8_t *grid = comp->teamGridPairings;

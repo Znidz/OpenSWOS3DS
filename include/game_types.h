@@ -998,10 +998,21 @@ typedef struct __attribute__((packed, aligned(2))) DIYCompetitionEx_LeagueView {
     uint16_t hasGroupsDiy;              /* 0x04 (parent 0x68) */
     uint16_t totalMatchesPerSection;     /* 0x06 (parent 0x6A): BSS_00_2DF5E reset value */
     uint16_t totalMatchesPerSectionLive; /* 0x08 (parent 0x6C): BSS_00_2DF5E live counter, decrements per match */
-    uint16_t teamEntryOffsets[14];      /* 0x0A (parent 0x6E): aliases diyTeamEntryOffsetsByIndex; sorted by standings, value/18 = team index */
-    uint8_t  cupRoundResults[100];      /* 0x26 (parent 0x8A): same memory as cup view */
+    /* 0x0A..0x8A (parent 0x6E): aliases diyTeamEntryOffsetsByIndex; sorted by standings,
+     * value/18 = team index -- one per place of the league, 24 in 96/97's largest and more in
+     * a world's. It was declared [14] with the cup view's cupRoundResults[100] after it, and
+     * a league's places past the 14th ran on into that memory, as in the original: undefined
+     * in C, and GCC took the bound at its word -- a loop over a 20-club table "proved" the
+     * table had at most 14 places and folded `n >= 17` to false (world_playoff.c, 2026-10-27).
+     * Declared whole now: the same bytes, every later offset unchanged; the league view never
+     * used cupRoundResults. */
+    uint16_t teamEntryOffsets[64];
     uint8_t  shuffleAndPad[64];         /* 0x8A (parent 0xEE): diyTeamShuffleIndices(2) + BSS_00_2E01E(62) */
-    uint16_t leagueTeamIds[14];         /* 0xCA (parent 0x12E): aliases diyLeagueTeamIds */
+    uint16_t leagueTeamIds[14];         /* 0xCA (parent 0x12E): aliases diyLeagueTeamIds. NB: a
+                                         * league of more than 14 runs on past this array (into
+                                         * competitionFormat and past the match data), as the
+                                         * original's overlay did -- index it through a pointer
+                                         * only; the same GCC hazard as teamEntryOffsets above. */
     uint16_t competitionFormat;         /* 0xE6 (parent 0x14A): was SWOS2.s diyCompetitionFormat (global alias removed) */
     uint16_t roundFormat;               /* 0xE8 (parent 0x14C): was SWOS2.s diyRoundFormat (global alias removed) */
 } DIYCompetitionEx_LeagueView;

@@ -395,6 +395,18 @@ static int gp_series(int a, int b, int level)   /* best of three: games 1 and 3 
 
 static void gp_move(int c, int delta) { add_move(gp_row(c)->glob, delta); }
 
+/* A tie the career club played (world_playoff.c): its two clubs and its winner (team
+ * numbers) -- the Mod's GP_IN.pl_w; applied after the tie is simulated, so the random
+ * numbers drawn are the same either way. */
+static u16 s_playedA, s_playedB, s_playedW;
+static int gp_played(int a, int b, int w)
+{
+    const u16 ta = gp_row(a)->team, tb = gp_row(b)->team;
+    if (!s_playedW || !((ta == s_playedA && tb == s_playedB) || (ta == s_playedB && tb == s_playedA)))
+        return w;
+    return s_playedW == ta ? a : s_playedW == tb ? b : w;
+}
+
 /* The spec's knockout play-offs, in order (world_import.py compiles only the kinds played
  * here: promotion 1 and play-out 4, entrants [division, place], rounds of ties). */
 static void gp_season(const u8 *s)
@@ -457,6 +469,7 @@ static void gp_season(const u8 *s)
                     int w = a == b && skip ? a                                           /* (one club: no tie) */
                           : gap && (d >= gap || -d >= gap) ? (gp_better(a, b) ? a : b)  /* (too far apart: no tie) */
                           : legs == 3 ? gp_series(a, b, level) : gp_tie(a, b, legs, host, level);
+                    w = gp_played(a, b, w);
                     W[nt] = w; L[nt] = w == mem[2 * i] ? mem[2 * i + 1] : mem[2 * i];
                     last = nt;
                 }
@@ -601,6 +614,12 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
         dp_season();
     }
     s_dp_moves = s_nmv;
+    s_playedA = s_playedB = s_playedW = 0;
+    if (g_worldPlayoff.kind == WORLD_PLAYOFF_GROUP_TIE && g_worldPlayoff.winner) {
+        s_playedA = g_worldPlayoff.team[0];
+        s_playedB = g_worldPlayoff.team[1];
+        s_playedW = g_worldPlayoff.winner;
+    }
     gp_season(lp->spec);
 
     /* Each club's move as the Mod makes it: its record's by place, the play-offs' on top. */

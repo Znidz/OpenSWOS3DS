@@ -6006,8 +6006,9 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
     /* A world's play-off the career club plays (world_playoff.c): which, its clubs (team
      * numbers) and places, the winner once decided. */
     if (g_worldPlayoff.kind) {
-        mjson_printf(json_out_emit, &out, ",\n  %Q:{%Q:%d,%Q:%d,%Q:%d,%Q:[", "world_playoff",
+        mjson_printf(json_out_emit, &out, ",\n  %Q:{%Q:%d,%Q:%d,%Q:%d,%Q:%d,%Q:[", "world_playoff",
                      "kind", (int)g_worldPlayoff.kind, "etp", (int)g_worldPlayoff.etp,
+                     "rules", (int)g_worldPlayoff.rules,
                      "winner", (int)g_worldPlayoff.winner, "teams");
         for (int i = 0; i < g_worldPlayoff.n; i++)
             mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)g_worldPlayoff.team[i]);
@@ -6438,6 +6439,7 @@ static void apply_semantic_load(const char *src, int src_size)
             const char *arr; int al, pos = 0, voff, vlen, vt, i = 0;
             if (mjson_get_long(wp, wplen, "$.kind", &v) > 0) g_worldPlayoff.kind = (uint8_t)v;
             if (mjson_get_long(wp, wplen, "$.etp", &v) > 0) g_worldPlayoff.etp = (uint8_t)v;
+            if (mjson_get_long(wp, wplen, "$.rules", &v) > 0) g_worldPlayoff.rules = (uint8_t)v;
             if (mjson_get_long(wp, wplen, "$.winner", &v) > 0) g_worldPlayoff.winner = (uint16_t)v;
             if (mjson_find(wp, wplen, "$.teams", &arr, &al) == MJSON_TOK_ARRAY)
                 while (i < 8 && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)

@@ -15,6 +15,10 @@
  * the first at the worse placed's, extra time and penalties when the two are level on points;
  * any other level tie: the better placed).
  *
+ * And a group's play-out (the pack's knockouts, gplay.c: Serie C's 16th v 19th, 17th v 18th,
+ * two legs; Serie D's single, extra time): its ties are independent, so the career club's
+ * bracket is its own tie, a contest of two (the other tie is decided at the season end).
+ *
  * A bye is a club's tie with itself, listed after the round's real ties and not played
  * (the round plays totalMatchesInRound of its matchPairsPerRound ties): the cup engine's
  * halving bracket holds -- 8 places for Serie B's 6 clubs.
@@ -24,14 +28,14 @@
 
 #include "swos_types.h"
 
-enum { WORLD_PLAYOFF_NONE, WORLD_PLAYOFF_B_PLAYOUT, WORLD_PLAYOFF_B_PLAYOFF };
+enum { WORLD_PLAYOFF_NONE, WORLD_PLAYOFF_B_PLAYOUT, WORLD_PLAYOFF_B_PLAYOFF, WORLD_PLAYOFF_GROUP_TIE };
 
 /* The contest under way or played this season (saved with the career). */
 typedef struct {
     uint8_t  kind;              /* WORLD_PLAYOFF_*; NONE: no contest */
     uint8_t  n;                 /* its clubs */
-    uint8_t  etp;               /* extra time + penalties (the clubs level on points) */
-    uint8_t  pad;
+    uint8_t  etp;               /* level decided by penalties, not by the better placed */
+    uint8_t  rules;             /* a group's tie: its round's flag byte (legs / e.t. / pens) */
     uint16_t team[8];           /* {country, ordinal} as the game packs it, entrant order */
     uint8_t  prio[8];           /* the better placed: lower */
     uint16_t pts[8];            /* their points (the final's extra time + penalties) */

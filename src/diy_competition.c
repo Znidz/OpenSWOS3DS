@@ -2830,6 +2830,7 @@ void DIY_UpdateCompetitionProgress(void)
         int16_t half = (int16_t)((uint16_t)a0s->matchPairsPerRound >> 1);
         a0s->matchPairsPerRound = half;
         a0s->totalMatchesInRound = half;
+        WorldPlayoff_RoundSize();   /* a world's play-off: only the round's real ties (world_playoff.c) */
         SWOS_DBG("[bug23-cup] HALVED: new mppr=%d new round=%d\n",
                 (int)half, (int)a0s->currentRoundIndex);
     }

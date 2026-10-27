@@ -25,6 +25,7 @@
 #include "statistics.h"
 #include "transfer_market.h"
 #include "league_playoffs.h"
+#include "world_playoff.h"
 
 extern uint8_t _diyLeagueSeasonStateTable[];
 extern uint8_t _diyLeagueScratchBuffer[];
@@ -1637,6 +1638,8 @@ static void processPrimaryCompetitionForNextSeason(uint8_t *competition)
         } else {
             /* Other division — auto-advance */
             Career_AutoAdvanceInternationalCompetitionFixtures(competition, d7);
+            if (competition == _currentCompetitionPtr)   /* (the career's league, not one the */
+                WorldPlayoff_RestoreEarlyTable(d7);      /* European places simulate: world_playoff.c) */
             if (d7 == 0)
                 DIY_CachePrimaryQualifiedTeamsGrid();
         }

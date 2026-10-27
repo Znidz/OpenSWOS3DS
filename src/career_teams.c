@@ -23,7 +23,11 @@
 #include "file_io.h"
 
 /* ---- Constants ---- */
-#define SAVE_SIZE                   0x5582  /* bytes to save: numSelectedTeams + team data */
+/* Bytes parked by SaveSelectedTeams: numSelectedTeams + the records. The original parked 32
+ * (0x5582); the cache holds SELECTED_TEAMS_MAX, and a world's season end can park more than
+ * 32 -- a Serie C career at its league's end held 51, and the 19 past the 32nd were lost
+ * (a VerifyTeamLoaded panic at the season end, world_playoff.c) -- so all of them. */
+#define SAVE_SIZE                   (2 + SELECTED_TEAMS_MAX * 684)
 
 /* ---- ASM externs ---- */
 extern uint16_t _currentTeamNumber;
@@ -245,8 +249,8 @@ void CopySelectedTeamNumbers(uint16_t count, uint8_t *dest)
  * ================================================================ */
 static uint8_t savedTeamsBackupBuffer[SAVE_SIZE];
 
-/* numSelectedTeams (2 B) and the selectedTeams[32] array (SAVE_SIZE-2 =
- * 32*684 = 21888 B at &selTeamsPtr) are backed up / restored as TWO independent
+/* numSelectedTeams (2 B) and the selectedTeams array (SAVE_SIZE-2 =
+ * SELECTED_TEAMS_MAX*684 B at &selTeamsPtr) are backed up / restored as TWO independent
  * runs, so neither relies on the array sitting immediately after numSelectedTeams
  * in BSS. The array is being lifted out of the careerFileBuffer overlay into a
  * typed carrier (see docs/SELECTED_TEAMS_UNTANGLE.md); decoupling here is
@@ -258,7 +262,7 @@ void SaveSelectedTeams(void)
     volatile uint16_t *dst = (volatile uint16_t *)savedTeamsBackupBuffer;
     *dst++ = _numSelectedTeams;                              /* count -> backup[0] */
     volatile uint16_t *src = (volatile uint16_t *)&_selTeamsPtr;
-    uint32_t remaining = SAVE_SIZE - 2;                    /* 21888 = 32 * 684 */
+    uint32_t remaining = SAVE_SIZE - 2;
     while (remaining) {
         *dst++ = *src++;
         remaining -= 2;
@@ -271,7 +275,7 @@ void SaveSelectedTeams(void)
 TeamFileEx *Career_ParkedTeams(uint16_t *count)
 {
     *count = *(uint16_t *)savedTeamsBackupBuffer;
-    if (*count > 32)
+    if (*count > SELECTED_TEAMS_MAX)
         *count = 0;
     return (TeamFileEx *)(savedTeamsBackupBuffer + 2);
 }
@@ -279,7 +283,7 @@ TeamFileEx *Career_ParkedTeams(uint16_t *count)
 __attribute__((used, externally_visible, optimize("no-tree-loop-distribute-patterns")))
 void RestoreSelectedTeams(void)
 {
-    if (_numSelectedTeams > 32) {
+    if (_numSelectedTeams > SELECTED_TEAMS_MAX) {
         PanicHaltLoop();
     }
     volatile uint16_t *src = (volatile uint16_t *)savedTeamsBackupBuffer;

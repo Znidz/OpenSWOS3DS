@@ -137,6 +137,7 @@ static struct {
     struct dp_row t[NDIV][NT];
     u16 po_win, out_win;        /* the career club's play-off / play-out played (world_playoff.c):
                                    its winner's team number, 0: simulated */
+    u16 cpo_win;                /* its Serie C play-off, the same */
 } DP_IN;
 
 static u32 dp_rng;
@@ -301,6 +302,9 @@ static void serie_c(void)
         shuffle(w2, 4);
         int f1 = dp_tie(K_FFS, w2[1], w2[0], 2, -1), f2 = dp_tie(K_FFS, w2[3], w2[2], 2, -1);
         int w = dp_tie(K_FFF, f2, f1, 2, -1);
+        for (int g = 1; g <= ng && DP_IN.cpo_win; g++)          /* (played: its real winner) */
+            for (int k = 0; k < DP_IN.n[g]; k++)
+                if (DP_IN.t[g][k].team == DP_IN.cpo_win) w = g * NT + k;
         dp_move(w, -1);
     }
 }
@@ -593,7 +597,9 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
     s_nmv = 0;
     if (lp->italy) {
         DP_IN.ng = lp->groups;
-        DP_IN.po_win = DP_IN.out_win = 0;
+        DP_IN.po_win = DP_IN.out_win = DP_IN.cpo_win = 0;
+        if (g_worldPlayoff.kind == WORLD_PLAYOFF_C_PLAYOFF)
+            DP_IN.cpo_win = g_worldPlayoff.winner;
         if (g_worldPlayoff.kind == WORLD_PLAYOFF_B_PLAYOUT)
             DP_IN.out_win = g_worldPlayoff.winner;
         if (g_worldPlayoff.kind == WORLD_PLAYOFF_B_PLAYOFF)

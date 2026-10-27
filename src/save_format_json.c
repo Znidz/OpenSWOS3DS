@@ -2724,6 +2724,45 @@ static void emit_team_file_ex_body(mjson_print_fn_t fn, void *fnd,
     mjson_printf(fn, fnd, "%s", "]}");
 }
 
+/* world_playoff's arrays in the career save: numbers by name (include/world_playoff.h). */
+static void wp_emit_u16(void *out, const char *name, const uint16_t *a, int n)
+{
+    mjson_printf(json_out_emit, out, ",%Q:[", name);
+    for (int i = 0; i < n; i++)
+        mjson_printf(json_out_emit, out, "%s%d", i ? "," : "", (int)a[i]);
+    mjson_printf(json_out_emit, out, "%s", "]");
+}
+
+static void wp_emit_u8(void *out, const char *name, const uint8_t *a, int n)
+{
+    mjson_printf(json_out_emit, out, ",%Q:[", name);
+    for (int i = 0; i < n; i++)
+        mjson_printf(json_out_emit, out, "%s%d", i ? "," : "", (int)a[i]);
+    mjson_printf(json_out_emit, out, "%s", "]");
+}
+
+static int wp_load_u16(const char *o, int ol, const char *path, uint16_t *a, int cap)
+{
+    const char *arr; int al, pos = 0, voff, vlen, vt, i = 0;
+    long v;
+    if (mjson_find(o, ol, path, &arr, &al) == MJSON_TOK_ARRAY)
+        while (i < cap && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
+            if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
+                a[i++] = (uint16_t)v;
+    return i;
+}
+
+static int wp_load_u8(const char *o, int ol, const char *path, uint8_t *a, int cap)
+{
+    const char *arr; int al, pos = 0, voff, vlen, vt, i = 0;
+    long v;
+    if (mjson_find(o, ol, path, &arr, &al) == MJSON_TOK_ARRAY)
+        while (i < cap && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
+            if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
+                a[i++] = (uint8_t)v;
+    return i;
+}
+
 static void emit_team_file_ex(mjson_print_fn_t fn, void *fnd,
                               const char *key, const uint8_t *base)
 {
@@ -6004,21 +6043,35 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
     }
 
     /* A world's play-off the career club plays (world_playoff.c): which, its clubs (team
-     * numbers) and places, the winner once decided. */
+     * numbers), their places, points and the round under way, the other groups' tables
+     * simulated early, the winner once decided. */
     if (g_worldPlayoff.kind) {
-        mjson_printf(json_out_emit, &out, ",\n  %Q:{%Q:%d,%Q:%d,%Q:%d,%Q:%d,%Q:[", "world_playoff",
-                     "kind", (int)g_worldPlayoff.kind, "etp", (int)g_worldPlayoff.etp,
-                     "rules", (int)g_worldPlayoff.rules,
-                     "winner", (int)g_worldPlayoff.winner, "teams");
-        for (int i = 0; i < g_worldPlayoff.n; i++)
-            mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)g_worldPlayoff.team[i]);
-        mjson_printf(json_out_emit, &out, "],%Q:[", "places");
-        for (int i = 0; i < g_worldPlayoff.n; i++)
-            mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)g_worldPlayoff.prio[i]);
-        mjson_printf(json_out_emit, &out, "],%Q:[", "points");
-        for (int i = 0; i < g_worldPlayoff.n; i++)
-            mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)g_worldPlayoff.pts[i]);
-        mjson_printf(json_out_emit, &out, "%s", "]}");
+        const WorldPlayoffState *w = &g_worldPlayoff;
+        uint16_t rows[2 * WORLD_PLAYOFF_EARLY_ROWS * 8];
+        int nr = 0;
+        mjson_printf(json_out_emit, &out, ",\n  %Q:{%Q:%d,%Q:%d,%Q:%d,%Q:%d,%Q:%d,%Q:%d,%Q:%d", "world_playoff",
+                     "kind", (int)w->kind, "etp", (int)w->etp, "rules", (int)w->rules,
+                     "winner", (int)w->winner, "cup", (int)w->cup, "ties", (int)w->ties,
+                     "early", (int)w->early);
+        wp_emit_u16(&out, "teams", w->team, w->n);
+        wp_emit_u8(&out, "places", w->prio, w->n);
+        wp_emit_u16(&out, "points", w->pts, w->n);
+        wp_emit_u16(&out, "won", w->won, w->n);
+        wp_emit_u16(&out, "scored", w->gf, w->n);
+        wp_emit_u8(&out, "table_places", w->place, w->n);
+        wp_emit_u8(&out, "groups", w->group, w->n);
+        wp_emit_u8(&out, "tie_a", w->tieA, w->ties);
+        wp_emit_u8(&out, "tie_b", w->tieB, w->ties);
+        wp_emit_u8(&out, "early_divisions", w->earlyDiv, w->early);
+        wp_emit_u8(&out, "early_counts", w->earlyN, w->early);
+        for (int e = 0; e < w->early && e < 2; e++)     /* (team, played, won, drawn, lost, gf, ga, pts) */
+            for (int k = 0; k < w->earlyN[e] && k < WORLD_PLAYOFF_EARLY_ROWS; k++) {
+                const WorldPlayoffRow *r = &w->earlyRow[e][k];
+                rows[nr++] = r->team; rows[nr++] = r->played; rows[nr++] = r->won; rows[nr++] = r->drawn;
+                rows[nr++] = r->lost; rows[nr++] = r->gf; rows[nr++] = r->ga; rows[nr++] = r->pts;
+            }
+        wp_emit_u16(&out, "early_rows", rows, nr);
+        mjson_printf(json_out_emit, &out, "%s", "}");
     }
 
     /* Foreign-market player pool — fixed-size MarketPlayer[432]. Emit
@@ -6435,27 +6488,33 @@ static void apply_semantic_load(const char *src, int src_size)
         const char *wp = NULL;
         int wplen = 0;
         if (mjson_find(src, src_size, "$.world_playoff", &wp, &wplen) == MJSON_TOK_OBJECT) {
+            WorldPlayoffState *w = &g_worldPlayoff;
+            uint16_t rows[2 * WORLD_PLAYOFF_EARLY_ROWS * 8];
             long v = 0;
-            const char *arr; int al, pos = 0, voff, vlen, vt, i = 0;
-            if (mjson_get_long(wp, wplen, "$.kind", &v) > 0) g_worldPlayoff.kind = (uint8_t)v;
-            if (mjson_get_long(wp, wplen, "$.etp", &v) > 0) g_worldPlayoff.etp = (uint8_t)v;
-            if (mjson_get_long(wp, wplen, "$.rules", &v) > 0) g_worldPlayoff.rules = (uint8_t)v;
-            if (mjson_get_long(wp, wplen, "$.winner", &v) > 0) g_worldPlayoff.winner = (uint16_t)v;
-            if (mjson_find(wp, wplen, "$.teams", &arr, &al) == MJSON_TOK_ARRAY)
-                while (i < 8 && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
-                    if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
-                        g_worldPlayoff.team[i++] = (uint16_t)v;
-            g_worldPlayoff.n = (uint8_t)i;
-            pos = 0; i = 0;
-            if (mjson_find(wp, wplen, "$.places", &arr, &al) == MJSON_TOK_ARRAY)
-                while (i < 8 && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
-                    if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
-                        g_worldPlayoff.prio[i++] = (uint8_t)v;
-            pos = 0; i = 0;
-            if (mjson_find(wp, wplen, "$.points", &arr, &al) == MJSON_TOK_ARRAY)
-                while (i < 8 && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
-                    if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
-                        g_worldPlayoff.pts[i++] = (uint16_t)v;
+            int nr;
+            if (mjson_get_long(wp, wplen, "$.kind", &v) > 0) w->kind = (uint8_t)v;
+            if (mjson_get_long(wp, wplen, "$.etp", &v) > 0) w->etp = (uint8_t)v;
+            if (mjson_get_long(wp, wplen, "$.rules", &v) > 0) w->rules = (uint8_t)v;
+            if (mjson_get_long(wp, wplen, "$.winner", &v) > 0) w->winner = (uint16_t)v;
+            if (mjson_get_long(wp, wplen, "$.cup", &v) > 0) w->cup = (uint8_t)v;
+            w->n = (uint8_t)wp_load_u16(wp, wplen, "$.teams", w->team, WORLD_PLAYOFF_MAX);
+            wp_load_u8(wp, wplen, "$.places", w->prio, WORLD_PLAYOFF_MAX);
+            wp_load_u16(wp, wplen, "$.points", w->pts, WORLD_PLAYOFF_MAX);
+            wp_load_u16(wp, wplen, "$.won", w->won, WORLD_PLAYOFF_MAX);
+            wp_load_u16(wp, wplen, "$.scored", w->gf, WORLD_PLAYOFF_MAX);
+            wp_load_u8(wp, wplen, "$.table_places", w->place, WORLD_PLAYOFF_MAX);
+            wp_load_u8(wp, wplen, "$.groups", w->group, WORLD_PLAYOFF_MAX);
+            w->ties = (uint8_t)wp_load_u8(wp, wplen, "$.tie_a", w->tieA, 16);
+            wp_load_u8(wp, wplen, "$.tie_b", w->tieB, 16);
+            w->early = (uint8_t)wp_load_u8(wp, wplen, "$.early_divisions", w->earlyDiv, 2);
+            wp_load_u8(wp, wplen, "$.early_counts", w->earlyN, 2);
+            nr = wp_load_u16(wp, wplen, "$.early_rows", rows, 2 * WORLD_PLAYOFF_EARLY_ROWS * 8);
+            for (int e = 0, i = 0; e < w->early && e < 2; e++)
+                for (int k = 0; k < w->earlyN[e] && k < WORLD_PLAYOFF_EARLY_ROWS && i + 8 <= nr; k++) {
+                    WorldPlayoffRow *r = &w->earlyRow[e][k];
+                    r->team = rows[i++]; r->played = rows[i++]; r->won = rows[i++]; r->drawn = rows[i++];
+                    r->lost = rows[i++]; r->gf = rows[i++]; r->ga = rows[i++]; r->pts = rows[i++];
+                }
         }
     }
 

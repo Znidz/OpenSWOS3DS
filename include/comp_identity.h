@@ -84,12 +84,13 @@ enum CompId {
      * 120/121). */
     COMPID_englishCup                        = 118,
     COMPID_englishLeagueCup                  = 119,
-    /* Dynamic / data-only competitions start at 128 — the original SWOS comp ids
-     * fill 0..127 exactly, so a brand-new competition (added as pure data in
-     * tournaments.json with no compiled record) must use a byte >= 128. The
-     * field is int8_t but every identity read casts (uint8_t), so 128 is read
-     * back as 128 (see comp_id() below and docs/COMPETITION_DYNAMIC_REFACTOR.md
-     * §8d). Widen Competition.compId to uint8_t before the Amiga bake. */
+    /* Dynamic / data-only competitions. NB the original's ids do NOT stop at 127:
+     * its cups are stored negative (-128 = 128 the Hungarian cup, -127 = 129 the
+     * Icelandic cup ...) and the ids run to 161 -- 162..255 are free (a world's
+     * play-off uses 200, world_playoff.c). So 128 is ALSO the Hungarian cup: the
+     * Copa resolves by Comp_ById, whose table keeps the last registered of the
+     * two (it works because the Copa registers last). Moving the Copa to a free id
+     * changes what Brazilian career saves hold -- an open item, 2026-10-27. */
     COMPID_copaLibertadores                  = 128,
 };
 

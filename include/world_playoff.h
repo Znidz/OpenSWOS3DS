@@ -19,6 +19,13 @@
  * two legs; Serie D's single, extra time): its ties are independent, so the career club's
  * bracket is its own tie, a contest of two (the other tie is decided at the season end).
  *
+ * And Serie C's national play-off (dplay.c c_lend / dp_perm_c): 28 clubs, the groups' 2nd-10th
+ * and the cup winner's place -- group rounds (5th v 10th, 6th v 9th, 7th v 8th; then the 3
+ * winners and the 4th, best v worst), national rounds with seeded draws (the 3rds, the cup
+ * place, the best qualifier; then the 2nds and the best winner), a Final Four. It needs the
+ * other two groups' tables when the club's group ends: they are simulated then, and the
+ * season end gets their results back.
+ *
  * A bye is a club's tie with itself, listed after the round's real ties and not played
  * (the round plays totalMatchesInRound of its matchPairsPerRound ties): the cup engine's
  * halving bracket holds -- 8 places for Serie B's 6 clubs.
@@ -28,17 +35,36 @@
 
 #include "swos_types.h"
 
-enum { WORLD_PLAYOFF_NONE, WORLD_PLAYOFF_B_PLAYOUT, WORLD_PLAYOFF_B_PLAYOFF, WORLD_PLAYOFF_GROUP_TIE };
+enum { WORLD_PLAYOFF_NONE, WORLD_PLAYOFF_B_PLAYOUT, WORLD_PLAYOFF_B_PLAYOFF, WORLD_PLAYOFF_GROUP_TIE,
+       WORLD_PLAYOFF_C_PLAYOFF };
 
 /* The contest under way or played this season (saved with the career). */
+#define WORLD_PLAYOFF_MAX 32
+#define WORLD_PLAYOFF_EARLY_ROWS 24
+
+/* A group's final table simulated early, kept for the season end (dplay.c dp_restore). */
+typedef struct {
+    uint16_t team, played, won, drawn, lost, gf, ga, pts;
+} WorldPlayoffRow;
+
 typedef struct {
     uint8_t  kind;              /* WORLD_PLAYOFF_*; NONE: no contest */
     uint8_t  n;                 /* its clubs */
     uint8_t  etp;               /* level decided by penalties, not by the better placed */
     uint8_t  rules;             /* a group's tie: its round's flag byte (legs / e.t. / pens) */
-    uint16_t team[8];           /* {country, ordinal} as the game packs it, entrant order */
-    uint8_t  prio[8];           /* the better placed: lower */
-    uint16_t pts[8];            /* their points (the final's extra time + penalties) */
+    uint16_t team[WORLD_PLAYOFF_MAX];   /* {country, ordinal} as the game packs it, entrant order */
+    uint8_t  prio[WORLD_PLAYOFF_MAX];   /* a level tie goes to the lower (the place, the seed) */
+    uint16_t pts[WORLD_PLAYOFF_MAX];    /* their points, wins, goals scored, places, groups */
+    uint16_t won[WORLD_PLAYOFF_MAX];
+    uint16_t gf[WORLD_PLAYOFF_MAX];
+    uint8_t  place[WORLD_PLAYOFF_MAX];
+    uint8_t  group[WORLD_PLAYOFF_MAX];
+    uint8_t  cup;               /* the Coppa Italia Serie C winner's entrant (its stand-in) */
+    uint8_t  ties;              /* the round under way: its real ties (entrants), the byes after */
+    uint8_t  tieA[16], tieB[16];
+    uint8_t  early;             /* the other groups simulated early: their divisions, tables */
+    uint8_t  earlyDiv[2], earlyN[2];
+    WorldPlayoffRow earlyRow[2][WORLD_PLAYOFF_EARLY_ROWS];
     uint16_t winner;            /* its last tie's winner, 0: not decided yet */
 } WorldPlayoffState;
 
@@ -62,6 +88,14 @@ void WorldPlayoff_TieDecided(uint16_t team1, uint16_t team2, int32_t team2Won);
 /* A round of the contest under way has been played and its winners gathered
  * (DIY_UpdateCompetitionProgress): the next round's ties and rules. */
 void WorldPlayoff_ArrangeNextRound(void);
+
+/* After the engine halves the bracket for the next round: only that round's real ties
+ * are played (its byes after them). */
+void WorldPlayoff_RoundSize(void);
+
+/* The season end has simulated division d afresh: a group simulated early gets the early
+ * results, place by place (dplay.c dp_restore), so the play-off's seeding stands. */
+void WorldPlayoff_RestoreEarlyTable(uint16_t division);
 
 /* After a career is loaded: slot 4 back on the contest, if one is under way. */
 void WorldPlayoff_RestoreSlot(void);

@@ -1620,6 +1620,18 @@ static void file_LoadFile(uint8_t *name, uint8_t *dest)
     size = len;
 }
 
+/* A small file that may well be missing (data/WORLD: include/world.h): its size, or 0 when
+ * it is not there or does not fit `cap` -- without LoadFile's red flash and error, since a
+ * missing file is no error here. */
+uint32_t Resload_ReadSmallFile(const char *name, uint8_t *dest, uint32_t cap)
+{
+    file_GetFileSize((uint8_t *)name);
+    if (size == 0 || size > cap)
+        return 0;
+    file_LoadFile((uint8_t *)name, dest);
+    return size;
+}
+
 static void file_SaveFile(uint32_t fileSize, uint8_t *name, uint8_t *src)
 {
     disable_vblank_and_wait();

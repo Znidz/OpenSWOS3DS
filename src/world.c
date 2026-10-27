@@ -42,6 +42,21 @@ int32_t World_FromTag(const char *tag)
     return -1;
 }
 
+#ifndef SWOS_SDL_BUILD
+extern uint32_t Resload_ReadSmallFile(const char *name, uint8_t *dest, uint32_t cap);
+
+void World_ReadFromData(void)
+{
+    char tag[16];
+    uint32_t n = Resload_ReadSmallFile("data/WORLD", (uint8_t *)tag, sizeof tag - 1);
+    while (n > 0 && (tag[n - 1] == '\n' || tag[n - 1] == '\r' || tag[n - 1] == ' '))
+        n--;
+    tag[n] = '\0';
+    if (n > 0)
+        World_Set(tag);
+}
+#endif
+
 int32_t World_Set(const char *tag)
 {
     const int32_t w = World_FromTag(tag);

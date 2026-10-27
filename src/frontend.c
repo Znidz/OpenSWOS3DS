@@ -7,6 +7,7 @@
 #include "game_utils.h"
 #include "audio.h"
 #include "menus.h"
+#include "world.h"           /* the football world, before the competition tables */
 #include "display.h"
 #include <string.h>   /* memcpy/memset — used by both the SDL decode and the Amiga overlay re-stride */
 
@@ -108,6 +109,12 @@ void LoadOverlayToFrontbuffer(const uint8_t *path)
 __attribute__((used, externally_visible, noinline))
 void FrontEndPreLoopSetup(void)
 {
+    /* The football world (include/world.h): the Amiga's drawer names it in data/WORLD;
+     * its baked competition records go over 96/97's on both targets, before the JSON. */
+#ifndef SWOS_SDL_BUILD
+    World_ReadFromData();
+#endif
+    World_InstallBaked();
 #ifdef SWOS_SDL_BUILD
     /* SWOS_DATA_JSON: rebuild normal-country competition tables from data_json/
        before any menu reads competitionsTable[]. No-op unless the env var is set. */

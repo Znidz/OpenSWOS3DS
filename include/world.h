@@ -30,4 +30,15 @@ const char *World_TagOf(WorldId w);          /* NULL for an unknown id */
 int32_t     World_FromTag(const char *tag);  /* the id, or -1 */
 int32_t     World_Set(const char *tag);      /* 0, or -1 (unknown: unchanged) */
 
+/* The world's baked competition records over 96/97's (src/world_data.c, made by
+ * scripts/world_import.py): on both targets, at start-up, before anything reads the
+ * competition tables; the SDL JSON install (data_json/worlds/<tag>/) runs after it. */
+void        World_InstallBaked(void);
+
+#ifndef SWOS_SDL_BUILD
+/* The Amiga reads no SWOS.ini: a drawer made for a world says so in data/WORLD (its tag;
+ * OpenSWOS Setup writes it). None: 96/97. */
+void        World_ReadFromData(void);
+#endif
+
 #endif

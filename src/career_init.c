@@ -1797,6 +1797,20 @@ void RebuildPointersAfterLoad(void)
         DIYCompetition *c = (DIYCompetition *)_careerCompetitionSlotPtrTable[_slot];
         if (c != NULL && c->namePtr != NULL)
             c->namePtr = (uint8_t *)c->competitionName;
+        /* The slot's stage snapshot -- a whole diyCompetitionStart image, copied back
+         * into the live competition at a stage change (and by Step 2 below) -- carries
+         * a namePtr of its own: re-point it the same way, at the slot's name (stable,
+         * unlike the snapshot's own bytes). It used to come back as the saving run's
+         * address, so a loaded European-cup career put a stale pointer live. */
+        if (c != NULL) {
+            uint8_t *snap = ((CompetitionSlotBuffer *)c)->stageSnapshot + offsetof(DIYCompetition, namePtr);
+            uint8_t *name;
+            memcpy(&name, snap, sizeof name);
+            if (name != NULL) {
+                name = (uint8_t *)c->competitionName;
+                memcpy(snap, &name, sizeof name);
+            }
+        }
     }
 
     /* Step 2: repopulate diyCompetitionStart (the runtime working

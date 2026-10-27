@@ -5693,7 +5693,33 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
      * restore_comp_copy_text_ptrs_from_template — so they're NOT
      * encoded in the save. They get restored from each careerContests
      * src template on load. */
-    emit_scalar_table(json_out_emit, &out, "career_scalars", s_career_scalars);
+    /* The five competition slots' raw blobs carry the header's namePtr, an absolute
+     * address that RebuildPointersAfterLoad re-derives on load: written as it was, it
+     * made two saves of the same career differ run to run (address randomisation) --
+     * found by the golden career test. Written as 1 when set and 0 when not (the
+     * rebuild re-points only a non-NULL one: it marks a slot in use), and put back
+     * straight after. */
+    {
+        CompetitionSlotBuffer *slots[5] = {
+            &_primaryCompetitionBuf, &_competitionContextBuf, &_tertiaryCompetitionContextBuf,
+            &_euroCupsCompetitionContextBuf, &_diyCompetitionContextBuf };
+        uint8_t *names[5], *snapNames[5];
+        uint8_t *const one = (uint8_t *)(uintptr_t)1;
+        for (int i = 0; i < 5; i++) {
+            /* ...and the stage snapshot's own copy of the header (a byte image). */
+            uint8_t *snap = slots[i]->stageSnapshot + offsetof(DIYCompetition, namePtr);
+            names[i] = slots[i]->tourn.header.namePtr;
+            slots[i]->tourn.header.namePtr = names[i] ? one : NULL;
+            memcpy(&snapNames[i], snap, sizeof snapNames[i]);
+            memcpy(snap, snapNames[i] ? &one : &snapNames[i], sizeof snapNames[i]);
+        }
+        emit_scalar_table(json_out_emit, &out, "career_scalars", s_career_scalars);
+        for (int i = 0; i < 5; i++) {
+            slots[i]->tourn.header.namePtr = names[i];
+            memcpy(slots[i]->stageSnapshot + offsetof(DIYCompetition, namePtr), &snapNames[i],
+                   sizeof snapNames[i]);
+        }
+    }
 
     /* Cross-target competition-buffer override (league standings) — see
      * emit_competition_overrides. Re-emits the layout/endian-sensitive
@@ -5932,9 +5958,18 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
      * diff — that region is the careerFileBufferBuf overlay, which post-untangle
      * holds only dead .skip zeros + 2 scalars, so it verified almost nothing.
      * The seasonInformations comp-name pointer slots that once needed exempting
-     * now live outside this set entirely (career_season_info.c). */
+     * now live outside this set entirely (career_season_info.c).
+     * Not for the golden career test's season saves (src/career_autopilot.c): the
+     * verify leaves the career RELOADED, and the test records a career nobody saves. */
+#ifdef SWOS_SDL_BUILD
+    { extern int32_t CareerAutopilot_Active(void);
+      if (!CareerAutopilot_Active())
+          verify_roundtrip_fields("career", s_career_scalars,
+                                  verify_reload_career, filename); }
+#else
     verify_roundtrip_fields("career", s_career_scalars,
                             verify_reload_career, filename);
+#endif
 #endif
 
     return 0;

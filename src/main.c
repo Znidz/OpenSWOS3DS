@@ -815,6 +815,14 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Invalid --replay-max-errors value '%s' (expected >= 1)\n", v);
                 return 1;
             }
+        } else if (strncmp(a, "--career-golden", 15) == 0 || strncmp(a, "--golden-", 9) == 0) {
+            /* The golden career test (src/career_autopilot.c, scripts/career_golden_test.sh). */
+            extern int32_t CareerAutopilot_ParseArg(const char *a);
+            if (CareerAutopilot_ParseArg(a) != 1) {
+                fprintf(stderr, "Invalid argument: %s\n", a);
+                return 1;
+            }
+            { extern volatile uint8_t _skipLoaderIntro; _skipLoaderIntro = 1; }
         } else if (strncmp(a, "--rollback", 10) == 0) {
             if (Rollback_ParseArg(a) != 1) {
                 fprintf(stderr, "Invalid argument: %s\n", a);

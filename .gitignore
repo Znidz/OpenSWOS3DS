@@ -156,6 +156,11 @@ scratch/*.py
 !scratch/wc_drive2.py
 # scripts/netplay_width_test.sh output.
 tests/netplay-width/
+# The golden career test (scripts/career_golden_test.sh): its careers are saves of the
+# original game's data (local, like tests/dos), and its runs. The record,
+# tests/career_golden.txt, is tracked.
+tests/career/
+tests/career-golden/
 
 # ---- The original game's data: NOT in this repo -----------------------------
 # OpenSWOS ships none of Sensible World of Soccer's own files. The data setup

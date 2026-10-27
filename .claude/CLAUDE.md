@@ -182,6 +182,16 @@ proves a refusal. A raw
 PLAYERS -- SWOS 2020 renumbers custom teams. `--custom-team-selftest` runs all 1,631 database
 teams through the rule and the file; run it after touching either.
 
+**The golden career test** (`scripts/career_golden_test.sh`, docs/WORLD_2026_27.md phase 0): the
+game's career autopilot (`--career-golden=new:<continent>/<country>/<division>/<club>` or a save;
+`src/career_autopilot.c`) plays seven new careers -- England's two top divisions, Italy, Germany,
+Spain, Scotland, Brazil (`tests/career_golden_careers.txt`) -- and any local saves in `tests/career`
+for five seasons, deterministically, and compares every season-end JSON save with
+`tests/career_golden.txt`. **Run it after touching the season engine, competitions, finances,
+transfers or saves**; `--update` records a deliberate change, `--twice` re-proves the runs repeat,
+`scripts/career_golden_diff.py A B` names what changed. A save must hold no address -- the test
+found two (`namePtr` in the competition blobs, now written as a set/unset marker).
+
 **Whole-match replays** (`.SRP`, `src/replay_v2.c`, docs/REPLAY_FORMAT_V2.md) are SDL-only and
 recorded from every match that is not training, the arcade cabinet or the rig: `LATEST.SRP` in the
 save folder, plus a dated copy under `[replays] auto_save`. They play through the highlights viewer

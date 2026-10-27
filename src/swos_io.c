@@ -189,6 +189,11 @@ const char *swos_save_dir(void)
     return s_save_dir;
 }
 
+void swos_set_save_dir(const char *dir)
+{
+    snprintf(s_save_dir, sizeof s_save_dir, "%s", dir);
+}
+
 const char *swos_user_dir(void)
 {
     return s_user_dir;

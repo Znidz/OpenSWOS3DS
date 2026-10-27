@@ -1607,6 +1607,12 @@ void MenuCheckControls(void)
  * being optimized away; cost is one no-op call per menu frame.
  * See scripts/swos_plugin.py (MENU_INJECT_SYMBOL).
  * ================================================================ */
+/* The season-end SPACE latch, for the career autopilot (src/career_autopilot.c). */
+void MenuSystem_LatchSeasonSkip(void)
+{
+    s_seasonSkipLatched = 1;
+}
+
 __attribute__((used, externally_visible, noinline))
 void MenuInputInjectPoint(void)
 {
@@ -1680,6 +1686,9 @@ void MenuProc(void)
     UpdateBlinkingMenuText();
     MenuCheckControls();
     MenuInputInjectPoint();   /* stable harness input-injection anchor — break here by SYMBOL */
+#ifdef SWOS_SDL_BUILD
+    { extern void CareerAutopilot_Tick(void); CareerAutopilot_Tick(); }  /* --career-golden */
+#endif
 
     menu = (Menu *)_currentMenu;
     selectedEntry = menu->selectedEntry;

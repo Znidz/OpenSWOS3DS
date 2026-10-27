@@ -54,6 +54,7 @@ SDL_ONLY_SRCS := \
     ini.c                 \
     input_sdl.c           \
     custom_team.c         \
+    career_autopilot.c    \
     dos_sound.c           \
     dos_music.c           \
     dos_music_impl.c      \

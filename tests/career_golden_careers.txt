@@ -1,0 +1,12 @@
+# The golden career test's careers (scripts/career_golden_test.sh): <name> <picker path>.
+# Each is a NEW career, its club chosen through CAREER -> CHOOSE TEAM AND START CAREER by the
+# rows' labels (src/career_autopilot.c), so the test needs no saves. Chosen to cover what the
+# World 2026-27 work touches (docs/WORLD_2026_27.md): leagues, the English play-offs (Division
+# One), the European cups, the Copa Libertadores.
+ENG-ARSENAL   EUROPE/ENGLAND/PREMIER LEAGUE/ARSENAL
+ENG1-WOLVES   EUROPE/ENGLAND/DIVISION ONE/WOLVERHAMPTON W.
+ITA-JUVENTUS  EUROPE/ITALY/SERIE A/JUVENTUS
+GER-BAYERN    EUROPE/GERMANY/1. LIGA/BAYERN
+ESP-BARCELONA EUROPE/SPAIN/PRIMERA DIVISION/BARCELONA
+SCO-CELTIC    EUROPE/SCOTLAND/PREMIER DIVISION/CELTIC
+BRA-FLAMENGO  SOUTH AMERICA/BRAZIL/FLAMENGO

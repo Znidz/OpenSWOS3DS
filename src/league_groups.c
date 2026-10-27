@@ -25,7 +25,8 @@
  *
  * Changed in the port: our typed tables instead of the Mod's packed byte table and DOS
  * addresses; clubs named by their ordinal (the global number is the country's base plus
- * it); the off-file pool's swaps (ri_over) are left out until the pools are (phase 4).
+ * it); the off-file pool's swapped slots (the Mod's ri_over) enter the lowest level from
+ * below, placed by their new identity's area (include/team_pool.h, LeagueGroups_Enter).
  *
  * How: the game has moved every club one division up or down its chain (its divisions'
  * promoted / relegated counts), as the original does. Here each move becomes one LEVEL:
@@ -34,8 +35,26 @@
  * stay are counted in their group first, then the movers are placed.
  */
 #include "league_groups.h"
+#include "team_pool.h"
 
 extern uint16_t _teamsCountryNumbers[256];
+
+static uint16_t s_enter[64];            /* this season end's slots entering from below */
+static int32_t  s_entering;
+
+void LeagueGroups_Enter(uint16_t globalNumber)
+{
+    if (s_entering < (int32_t)(sizeof s_enter / sizeof s_enter[0]))
+        s_enter[s_entering++] = globalNumber;
+}
+
+static int32_t entering(uint16_t g)
+{
+    for (int32_t i = 0; i < s_entering; i++)
+        if (s_enter[i] == g)
+            return 1;
+    return 0;
+}
 
 /* The level of division d (levels, past the last one: the level below the chain). */
 static int32_t level_of(int32_t d, const LeagueGroups *lg)
@@ -67,8 +86,9 @@ static void apply_one(const LeagueGroups *lg, const int8_t *table, int8_t *scrat
             const LeagueGroupClub *c = &lg->club[i];
             const uint16_t g = (uint16_t)(base + c->ordinal);
             const int32_t o = table[g] + c->base, n = scratch[g] + c->base;
-            const int32_t lo = level_of(o, lg);
-            const int32_t tl = n < o ? lo - 1 : n > o ? lo + 1 : lo;
+            const int32_t in = entering(g);     /* a new identity from below: */
+            const int32_t lo = in ? lg->levels : level_of(o, lg);
+            const int32_t tl = in ? lg->levels - 1 : n < o ? lo - 1 : n > o ? lo + 1 : lo;
             if (pass == 0) {
                 if (tl < 0 || tl >= lg->levels)
                     continue;                   /* off the chain: as the game moved it */
@@ -87,7 +107,8 @@ static void apply_one(const LeagueGroups *lg, const int8_t *table, int8_t *scrat
             /* Into a level of groups: the area's group, else the nearest with room. */
             const LeagueLevel *L = &lg->level[tl];
             const uint8_t p = parallel[tl];
-            const int32_t area = p < 2 ? c->area[p] : LEAGUE_GROUPS_NO_AREA;
+            const int32_t area = p < 2 ? TeamPool_Area(lg->country, c->ordinal, p, c->area[p])
+                                       : LEAGUE_GROUPS_NO_AREA;
             int32_t a = area < L->groups ? area
                       : area == LEAGUE_GROUPS_NO_AREA ? L->groups / 2 : L->groups - 1;
             int32_t to = a;
@@ -116,4 +137,5 @@ void LeagueGroups_Apply(const int8_t *table, int8_t *scratch)
     const LeagueGroups *lg = World_LeagueGroups(&n);
     for (int32_t i = 0; i < n; i++)
         apply_one(&lg[i], table, scratch);
+    s_entering = 0;
 }

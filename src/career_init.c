@@ -39,6 +39,7 @@ extern uint16_t _offerNegotiationAttemptCount;
 extern uint16_t _careerSeasonsCompleted;
 #include "career_params.h"
 #include "league_groups.h"
+#include "team_pool.h"
 extern uint16_t _currentSeasonShowing;
 extern uint16_t _seasonTransferQuota;
 extern uint16_t _pendingForeignPlayerCount;
@@ -254,6 +255,9 @@ void SelectTeamToManage(void);
 __attribute__((used, externally_visible))
 void ChooseTeamAndStartCareer(void)
 {
+    /* A new career: a world's pooled files as shipped (team_pool.c), also in the picker. */
+    TeamPool_Reset();
+    _teamsLoaded = 0;
     SelectTeamToManage();
     if (_selectedTeamPtr == 0) {
         SetExitMenuFlag();
@@ -637,6 +641,7 @@ void InitCareer(uint16_t teamNo)
         for (int16_t i = 1999; i >= 0; i--)
             *p++ = 0;
     }
+    TeamPool_Reset();
 
     DIY_LoadLeagueScratchFromTable();
 

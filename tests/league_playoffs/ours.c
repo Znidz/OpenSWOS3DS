@@ -8,6 +8,10 @@ DIYCompetitionEx _diyCompetitionStart;
 uint8_t *diy_resolve_team(int32_t sel) { (void)sel; return 0; }
 TeamFileEx _careerTeam;
 uint16_t _playPromotedAnimation, _playRelegatedAnimation;
+uint16_t _teamsCountryNumbers[256];
+int32_t TeamPool_Swap(uint8_t c, uint8_t o) { (void)c; (void)o; return -1; }
+void TeamPool_SwapsDone(void) { }
+void LeagueGroups_Enter(uint16_t g) { (void)g; }
 
 static const uint8_t PROM[14] = { 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 static const uint8_t REL[14] = { 3, 3, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2 };

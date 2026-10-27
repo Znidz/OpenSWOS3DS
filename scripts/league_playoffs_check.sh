@@ -43,7 +43,7 @@ $CC -c -o "$OUT/mod_main.o" $T/mod_main.c
 $CC -o "$OUT/mod" "$OUT/mod_main.o" "$OUT/mod_dp.o" "$OUT/mod_gp.o"
 $CC -Iinclude -include include/swos_platform.h -DSWOS_SDL_BUILD -o "$OUT/ours" $T/ours.c
 "$OUT/mod" "$OUT/mod.spec" "$N" > "$OUT/mod.txt"
-"$OUT/ours" "$OUT/ours.spec" "$N" > "$OUT/ours.txt"
+"$OUT/ours" "$OUT/ours.spec" "$N" > "$OUT/ours.txt" 2>/dev/null   # (its [playoffs] log)
 if cmp -s "$OUT/mod.txt" "$OUT/ours.txt"; then
     moves=$(awk '{ m += NF - 1 } END { print m }' "$OUT/ours.txt")
     echo "PASS: $N seasons, $moves moves, every one the Mod's"

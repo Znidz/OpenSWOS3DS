@@ -11,6 +11,7 @@
 #include "world.h"
 #include "league_groups.h"
 #include "league_playoffs.h"
+#include "team_pool.h"
 #include "fixture_rounds.h"
 
 extern CompetitionLeague _italianLeague;
@@ -420,6 +421,69 @@ const LeaguePlayoffs *World_LeaguePlayoffs(int32_t *count)
     case WORLD_2627:
         *count = 1;
         return kWorld2627Playoffs;
+    default:
+        *count = 0;
+        return 0;
+    }
+}
+
+/* The off-file pools (src/team_pool.c): the team file each serves, its own file, its
+ * clubs' areas at the levels of groups. */
+static const uint8_t kWorld2627_italyPoolAreas[][2] = {
+    { 0, 1 },
+    { 0, 2 },
+    { 2, 6 },
+    { 1, 4 },
+    { 0, 0 },
+    { 2, 7 },
+    { 0, 0 },
+    { 1, 4 },
+    { 1, 5 },
+    { 0, 1 },
+    { 0, 2 },
+    { 1, 3 },
+    { 2, 7 },
+    { 1, 4 },
+    { 1, 5 },
+    { 2, 6 },
+    { 2, 7 },
+    { 2, 8 },
+    { 0, 2 },
+    { 1, 4 },
+    { 1, 5 },
+    { 2, 6 },
+    { 2, 7 },
+    { 2, 8 },
+    { 0, 0 },
+    { 0, 1 },
+    { 0, 2 },
+    { 1, 3 },
+    { 1, 4 },
+    { 1, 5 },
+    { 2, 6 },
+    { 2, 7 },
+    { 2, 8 },
+    { 0, 0 },
+    { 0, 1 },
+    { 0, 2 },
+    { 1, 3 },
+    { 1, 4 },
+    { 1, 5 },
+    { 2, 6 },
+    { 2, 7 },
+    { 2, 8 },
+};
+
+static const TeamPool kWorld2627Pools[] = {
+    { 20, 194, "ITALY_POOL.json", 42, kWorld2627_italyPoolAreas },   /* Italy */
+};
+
+const TeamPool *World_TeamPools(int32_t *count)
+{
+    switch (World_Current()) {
+    case WORLD_2627:
+        *count = 1;
+        return kWorld2627Pools;
     default:
         *count = 0;
         return 0;

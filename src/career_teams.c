@@ -265,6 +265,16 @@ void SaveSelectedTeams(void)
     _numSelectedTeams = 0;
 }
 
+/* The records parked by SaveSelectedTeams (count, records), for whoever must change them in
+ * place -- a world's pool swapping a slot's identity (src/team_pool.c). */
+TeamFileEx *Career_ParkedTeams(uint16_t *count)
+{
+    *count = *(uint16_t *)savedTeamsBackupBuffer;
+    if (*count > 32)
+        *count = 0;
+    return (TeamFileEx *)(savedTeamsBackupBuffer + 2);
+}
+
 __attribute__((used, externally_visible, optimize("no-tree-loop-distribute-patterns")))
 void RestoreSelectedTeams(void)
 {

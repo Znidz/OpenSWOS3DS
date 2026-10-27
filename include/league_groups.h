@@ -50,6 +50,11 @@ const LeagueGroups *World_LeagueGroups(int32_t *count);
 /* The league with groups of a country, NULL for one without. */
 const LeagueGroups *LeagueGroups_ForCountry(uint16_t country);
 
+/* A slot that takes a club from below the league this season end (a world's pool,
+ * include/team_pool.h): it enters the lowest level, in the group of its new identity's area.
+ * Kept until LeagueGroups_Apply. */
+void LeagueGroups_Enter(uint16_t globalNumber);
+
 /* At the season's turn, before the new league table is taken from the scratch copy:
  * `table` the season's (old) offsets, `scratch` the game's new ones, by global number. */
 void LeagueGroups_Apply(const int8_t *table, int8_t *scratch);

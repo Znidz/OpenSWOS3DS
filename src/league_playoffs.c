@@ -49,6 +49,7 @@
  */
 #include "league_playoffs.h"
 #include "league_groups.h"
+#include "team_pool.h"
 #include "game_types.h"
 #include "diy_competition.h"
 
@@ -56,6 +57,7 @@ extern uint16_t _playPromotedAnimation;
 extern uint16_t _playRelegatedAnimation;
 extern TeamFileEx _careerTeam;
 extern DIYCompetitionEx _diyCompetitionStart;
+extern uint16_t _teamsCountryNumbers[256];
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -503,7 +505,11 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
      * a club whose move differs from the season's (scratch) gets the Mod's, one level. */
     const LeagueGroups *lg = LeagueGroups_ForCountry(country);
     const int32_t lowest = lg ? lg->level[lg->levels - 1].first : lp->divisions - 1;
+    const u16 base = _teamsCountryNumbers[country], manager = (u16)_careerTeam.team.globalTeamNumber;
+    u8 out[TEAM_POOL_SLOTS / 8];
     int32_t career = 0x7FFF;
+    for (int32_t i = 0; i < TEAM_POOL_SLOTS / 8; i++)
+        out[i] = 0;
     for (int32_t d = 0; d < lp->divisions; d++) {
         const int32_t n = s_in.n[d];
         for (int32_t k = 0; k < n; k++) {
@@ -511,22 +517,38 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
             int32_t want = 0;
             if (k < lp->promoted[d] && d > 0)
                 want = -1;
-            else if (k >= n - lp->relegated[d] && d < lowest)
+            else if (k >= n - lp->relegated[d])
                 want = 1;
             for (int32_t i = 0; i < s_nmv; i++)
-                if (s_mv[i].glob == g && !(s_mv[i].delta > 0 && d >= lowest)) {
-                    want += s_mv[i].delta;      /* (no reserve below the lowest: no move) */
+                if (s_mv[i].glob == g) {
+                    want += s_mv[i].delta;
                     SWOS_DBG("[playoffs] division %d place %d (global %u): %s by %s\n", (int)d,
                              (int)k + 1, (unsigned)g, s_mv[i].delta < 0 ? "up" : "down",
                              i < s_dp_moves ? "the Italian rules" : "a knockout");
                 }
             want = sign(want);
+            if (want > 0 && d >= lowest) {
+                /* Out of the lowest division: below the league is the pool -- the slot stays
+                 * and takes the next club of it (team_pool.c), never the manager's. */
+                if (g != manager && g >= base && g - base < TEAM_POOL_SLOTS)
+                    out[(g - base) >> 3] |= (u8)(1 << ((g - base) & 7));
+                want = 0;
+            }
             if (sign(scratch[g] - table[g]) != want)
                 scratch[g] = (int8_t)(table[g] + want);
-            if (g == (u16)_careerTeam.team.globalTeamNumber)
+            if (g == manager)
                 career = want;
         }
     }
+    for (int32_t o = 0; o < TEAM_POOL_SLOTS; o++)      /* (the slots in their order, as the Mod's) */
+        if (out[o >> 3] & (1 << (o & 7))) {
+            const int32_t in = TeamPool_Swap((u8)country, (u8)o);
+            if (in >= 0) {
+                LeagueGroups_Enter((u16)(base + o));
+                SWOS_DBG("[pool] slot %d (global %u) -> identity %d\n", (int)o, (unsigned)(base + o), (int)in);
+            }
+        }
+    TeamPool_SwapsDone();
     if (career != 0x7FFF) {
         _playPromotedAnimation = career < 0;
         _playRelegatedAnimation = career > 0;

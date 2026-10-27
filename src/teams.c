@@ -20,6 +20,7 @@
 #include "play_match_menu.h"
 #include "career_init.h"
 #include "league_groups.h"
+#include "team_pool.h"
 #ifdef SWOS_SDL_BUILD
 #include <stdlib.h>            /* getenv — SWOS_DATA_JSON team-load wire-in */
 #endif
@@ -413,6 +414,9 @@ int16_t LoadTeamFile(uint16_t extNumber)
 
         /* Shared post-load processing (binary OR json source). */
         setLoadedTeamsGlobalNumbers();
+
+        /* A world's pooled file in a career: its swapped slots' identities (team_pool.c). */
+        TeamPool_ApplyToFile(ext8, _teamFileBuffer);
 
         /* In career mode, also set league numbers */
         if (_gameType == GAME_TYPE_CAREER && _skipLeagueNumbers == 0) {

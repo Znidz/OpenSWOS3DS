@@ -22,6 +22,7 @@
 #include "game_types.h"
 #include "endian_helpers.h"
 #include "world.h"             /* "world" in career and competition saves */
+#include "team_pool.h"         /* "team_pool" in career saves */
 #include "translations.h"   /* tr() — localize competition name symbols */
 
 extern uint8_t *_currentCompetitionPtr;
@@ -3015,6 +3016,26 @@ static char *dj_slurp_country_teams(int countryNum, char *team_file, int team_fi
     return dj_slurp(path, out_len);
 }
 
+/* A world's own team file by name (teams/<name> of the world: an off-file pool,
+   src/team_pool.c), into teamFileBuf as DataJson_LoadTeamFileForCountry does. */
+int DataJson_LoadWorldTeamFile(const char *name, unsigned char *teamFileBuf, int maxTeams)
+{
+    char path[256], wpath[256];
+    int jlen = 0;
+    snprintf(path, sizeof path, "data_json/teams/%s", name);
+    if (!dj_world_path(path, wpath, sizeof wpath))
+        return -1;
+    char *jj = dj_slurp(wpath, &jlen);
+    if (!jj)
+        return -1;
+    int n = DataJson_LoadTeamArray(jj, jlen, (struct TeamFileEx *)(teamFileBuf + 2), maxTeams);
+    free(jj);
+    if (n <= 0)
+        return -1;
+    *(unsigned short *)teamFileBuf = (unsigned short)n;
+    return n;
+}
+
 /* The ids a country's teams file states (docs/TEAM_IDS.md): for each team of its
    "teams" array, in order -- the same order DataJson_LoadTeamFileForCountry gives the
    records -- its "uuid", its "checksum" and each player's "uuid"; "" for one that is
@@ -5967,6 +5988,20 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
         mjson_printf(json_out_emit, &out, "%s", "]");
     }
 
+    /* A world's pool below the league (team_pool.c): which club each swapped slot of its
+     * team file is now, and the queue below -- identities by number (a slot of the file,
+     * 256 + a club of the pool), never records. */
+    if (g_teamPool.init) {
+        mjson_printf(json_out_emit, &out, ",\n  %Q:{%Q:%d,%Q:[", "team_pool",
+                     "country", (int)g_teamPool.country, "queue");
+        for (int i = 0; i < g_teamPool.queued; i++)
+            mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)g_teamPool.queue[i]);
+        mjson_printf(json_out_emit, &out, "],%Q:[", "map");
+        for (int i = 0; i < TEAM_POOL_SLOTS; i++)
+            mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)g_teamPool.map[i]);
+        mjson_printf(json_out_emit, &out, "%s", "]}");
+    }
+
     /* Foreign-market player pool — fixed-size MarketPlayer[432]. Emit
      * all 432 slots so unpopulated entries (teamId == 0) round-trip
      * faithfully; the array is dense in practice for active careers. */
@@ -6345,6 +6380,34 @@ static void apply_semantic_load(const char *src, int src_size)
         }
     }
     PROF_END(tmd_teams, "career-load");
+
+    /* A world's pool (team_pool.c); a save without it: every slot its own. */
+    TeamPool_Reset();
+    {
+        const char *tp = NULL;
+        int tplen = 0;
+        if (mjson_find(src, src_size, "$.team_pool", &tp, &tplen) == MJSON_TOK_OBJECT) {
+            long v = 0;
+            const char *arr; int al, pos = 0, voff, vlen, vt, i = 0;
+            if (mjson_get_long(tp, tplen, "$.country", &v) > 0)
+                g_teamPool.country = (uint8_t)v;
+            if (mjson_find(tp, tplen, "$.queue", &arr, &al) == MJSON_TOK_ARRAY)
+                while (i < TEAM_POOL_QUEUE && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
+                    if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
+                        g_teamPool.queue[i++] = (uint16_t)v;
+            g_teamPool.queued = (uint8_t)i;
+            pos = 0; i = 0;
+            if (mjson_find(tp, tplen, "$.map", &arr, &al) == MJSON_TOK_ARRAY)
+                while (i < TEAM_POOL_SLOTS && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
+                    if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
+                        g_teamPool.map[i++] = (uint16_t)v;
+            g_teamPool.init = 1;
+        }
+    }
+    {
+        extern uint16_t _teamsLoaded;
+        _teamsLoaded = 0;       /* (a pooled file: read again with this career's identities) */
+    }
 
     /* Foreign-market player pool — fixed-size MarketPlayer[432]. */
     PROF_START(market_players);

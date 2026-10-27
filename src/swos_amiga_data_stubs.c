@@ -16,6 +16,7 @@
 #include <stddef.h>
 #include "swos_sections.h"
 #include "intro_chip_ram.h"
+#include "game_types.h"     /* TEAM_FILE_BUFFER_SIZE */
 
 /* AI_maxStoppageTime: real data in swos_amiga_data_imports.c */
 /* LoaderBootstrapBlobPI: real data in swos_data_bulk_imports.c */
@@ -1726,7 +1727,7 @@ SWOS_CHIP_BSS char _spriteGraphics[1310 * 8];          /* 1310 ptrs × 8 B = 104
 /* teamBName: real data in swos_data_bulk_imports.c */
 /* teamBudgetRankTable: typed definition in swos_data_typed_stubs.c */
 /* teamDepthLevel: real data in swos_amiga_data_imports.c */
-char _teamFileBuffer[0xFA0E];
+char _teamFileBuffer[TEAM_FILE_BUFFER_SIZE];   /* was 0xFA0E (93 teams): game_types.h */
 /* teamFileDataSize: typed definition in swos_data_typed_stubs.c */
 /* teamFileTeamCount: typed definition in swos_data_typed_stubs.c */
 /* teamFilenameBuffer: real data in swos_data_bulk_imports.c */

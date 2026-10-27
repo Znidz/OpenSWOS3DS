@@ -336,7 +336,7 @@ int16_t LoadTeamFile(uint16_t extNumber)
             _teamsLoaded = 0;
             return 1;
         }
-        if (fileSize > 64000u) {
+        if (fileSize > TEAM_FILE_BUFFER_SIZE) {   /* was 64000 (the 93-team buffer) */
             _panicReasonCode = 0x1939;
             PanicHaltLoop();
         }
@@ -357,8 +357,7 @@ int16_t LoadTeamFile(uint16_t extNumber)
         const char *djv = getenv("SWOS_DATA_JSON");
         if (!(djv && djv[0] == '0' && djv[1] == '\0')) {
             extern int DataJson_LoadTeamFileForCountry(int, uint8_t *, int);
-            /* teamFileBuffer is 0xFA0E bytes → (0xFA0E-2)/sizeof(TeamFileEx) ≈ 93 */
-            if (DataJson_LoadTeamFileForCountry((int)ext8, _teamFileBuffer, 93) > 0)
+            if (DataJson_LoadTeamFileForCountry((int)ext8, _teamFileBuffer, TEAM_FILE_MAX_TEAMS) > 0)
                 json_loaded = 1;
         }
 #endif
@@ -387,7 +386,7 @@ int16_t LoadTeamFile(uint16_t extNumber)
                 PanicHaltLoop();
                 /* never returns */
             }
-            if (fileSize > 64000u) {
+            if (fileSize > TEAM_FILE_BUFFER_SIZE) {   /* was 64000 (the 93-team buffer) */
                 _panicReasonCode = 0x1939;
                 PanicHaltLoop();
             }

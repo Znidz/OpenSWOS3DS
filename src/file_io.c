@@ -286,7 +286,7 @@ int16_t LoadFileEx(uint8_t *filename, uint8_t *dest, uint32_t *outFileSize)
             /* RNC header offset 4 = unpacked size (big-endian). A
              * native uint32 load on LE would byte-swap it (e.g.
              * 0x00007AEA becomes 0xEA7A0000 ≈ 3.9 GB) and trip the
-             * > 64000 sanity check at LoadTeamFile. */
+             * size sanity check at LoadTeamFile. */
             fileSize = BE_READ_U32(frontbuf + 4);
             if (magic == RNC_MAGIC_V1)
                 RncDecompressV1(rncSrc, dest);

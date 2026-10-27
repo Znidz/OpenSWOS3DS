@@ -658,6 +658,12 @@ typedef struct __attribute__((packed, aligned(2))) TeamFileEx {
 
 typedef char _teamfileex_size_check[(sizeof(TeamFileEx) == 684) ? 1 : -1];
 
+/* _teamFileBuffer: a team file as LoadTeamFile reads it -- a count word, then the
+ * records. The original's held 93 (0xFA0E bytes); a world's file holds up to 256, all an
+ * ordinal byte can number (the World 2026-27's Italy: docs/WORLD_2026_27.md, phase 2). */
+#define TEAM_FILE_MAX_TEAMS    256
+#define TEAM_FILE_BUFFER_SIZE  (2 + TEAM_FILE_MAX_TEAMS * 684)
+
 /* The selected-teams roster (career "SELECT TEAMS" list), max 32. Typed alias
  * for the relocated carrier in selected_teams.c — same address as the legacy
  * `selTeamsPtr` overlay base (both labels sit at +0). Prefer `selectedTeams[i]`

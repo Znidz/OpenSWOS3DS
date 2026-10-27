@@ -50,10 +50,17 @@ while [ $# -gt 0 ]; do
 done
 
 [ -x "$BIN" ] || { echo "build $BIN first (make X86_64=1)" >&2; exit 2; }
-# NAME -> what --career-golden gets: new:<path> from the list, or a save in tests/career.
-declare -A WHAT
+# NAME -> what --career-golden gets: new:<path> from the list, or a save in tests/career;
+# and its world, for a line that names one (@<tag>).
+declare -A WHAT WORLD
+SKIPPED=()
 while read -r name path; do
     case "$name" in ''|\#*) continue ;; esac
+    if [[ "$path" == @* ]]; then
+        world=${path%% *}; world=${world#@}; path=${path#* }
+        if [ ! -d "bin/data_json/worlds/$world" ]; then SKIPPED+=("$name (no world $world here)"); continue; fi
+        WORLD[$name]=$world
+    fi
     WHAT[$name]="new:$path"
 done < "$LIST"
 for f in "$FIXTURES"/*.CAR; do
@@ -79,13 +86,15 @@ play() {
         *)     cp "$FIXTURES/$what" "$dir/" || return 2 ;;
     esac
     ( cd bin && HOME="$HOMEDIR" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SWOS_HARNESS_TURBO=1 \
-        timeout 900 ./SWOS.x86_64 --career-golden="$what" --golden-seasons="$SEASONS" \
+        timeout 900 ./SWOS.x86_64 ${WORLD[$1]:+--world=${WORLD[$1]}} \
+        --career-golden="$what" --golden-seasons="$SEASONS" \
         --golden-out="$PWD/../$dir" ) > "$dir/run.log" 2>&1
     grep -q '^\[golden\] done' "$dir/run.log"
 }
 
 NOW=$(mktemp)
 fail=0
+for s in "${SKIPPED[@]}"; do echo "  skipped: $s"; done
 for name in "${CAREERS[@]}"; do
     car=$name
     dir="$OUT/$name"

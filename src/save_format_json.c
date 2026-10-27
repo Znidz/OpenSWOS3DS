@@ -2895,10 +2895,56 @@ void DataJson_LoadCareerParams(void)
    "$.<arrkey>", and return its object slice. On success returns 1, sets
    *filebuf to the malloc'd file (caller must free it once done with the slice)
    and *o/*ol to the record slice. Returns 0 (and frees the file) otherwise. */
+/* A world's data (include/world.h) sits in data_json/worlds/<tag>/ beside 96/97's, file
+ * for file -- teams/ITALY.json, competitions/leagues.json -- holding only what differs:
+ * a competition record by its id, a country's team file whole. `path` is 96/97's
+ * ("data_json/..."); the world's is written to `out`. 0 for 96/97, which has none. */
+static int dj_world_path(const char *path, char *out, size_t out_size)
+{
+    const char *rel = strncmp(path, "data_json/", 10) == 0 ? path + 10 : path;
+    if (World_Current() == WORLD_9697)
+        return 0;
+    snprintf(out, out_size, "data_json/worlds/%s/%s", World_Tag(), rel);
+    return 1;
+}
+
+/* The record `id` of one file, as a slice of `fb` (or 0). */
+static int dj_record_in(char *fb, int len, const char *arrkey, const char *id,
+                        const char **o, int *ol)
+{
+    const char *arr; int al;
+    char apath[64];
+    snprintf(apath, sizeof apath, "$.%s", arrkey);
+    if (mjson_find(fb, len, apath, &arr, &al) == MJSON_TOK_ARRAY) {
+        int pos = 0, voff, vlen, vt; char idbuf[64];
+        while ((pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0) {
+            if (vt != MJSON_TOK_OBJECT) continue;
+            if (mjson_get_string(arr + voff, vlen, "$.id", idbuf, (int)sizeof idbuf) > 0
+                && strcmp(idbuf, id) == 0) {
+                *o = arr + voff; *ol = vlen;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 static int dj_find_comp_record(const char *path, const char *arrkey, const char *id,
                                char **filebuf, const char **o, int *ol)
 {
     int len = 0;
+    char wpath[256];
+    /* The world's record first (an overlay of the records that differ from 96/97's). */
+    if (dj_world_path(path, wpath, sizeof wpath)) {
+        char *wfb = dj_slurp(wpath, &len);
+        if (wfb) {
+            if (dj_record_in(wfb, len, arrkey, id, o, ol)) {
+                *filebuf = wfb;
+                return 1;
+            }
+            free(wfb);
+        }
+    }
     char *fb = dj_slurp(path, &len);
     if (!fb)
         return 0;
@@ -2958,8 +3004,14 @@ static char *dj_slurp_country_teams(int countryNum, char *team_file, int team_fi
     if (!team_file[0])
         return NULL;   /* country not represented in the JSON corpus */
 
-    char path[256];
+    char path[256], wpath[256];
     snprintf(path, sizeof path, "data_json/%s", team_file);
+    /* The world's file for this country, whole, if it has one (include/world.h). */
+    if (dj_world_path(path, wpath, sizeof wpath)) {
+        char *w = dj_slurp(wpath, out_len);
+        if (w)
+            return w;
+    }
     return dj_slurp(path, out_len);
 }
 
@@ -3366,9 +3418,12 @@ static void dj_graph_parse_file(const char *path, const char *arrkey, int isLeag
                                 struct dj_graph_reg *reg, int *regN, int regMax,
                                 int *poolIdx)
 {
-    int len = 0;
+    int len = 0, wlen = 0;
     char *fb = dj_slurp(path, &len);
     if (!fb) return;
+    /* The world's overlay: a record of the same id replaces 96/97's (include/world.h). */
+    char wpath[256];
+    char *wfb = dj_world_path(path, wpath, sizeof wpath) ? dj_slurp(wpath, &wlen) : NULL;
     const char *arr; int al; char apath[64];
     snprintf(apath, sizeof apath, "$.%s", arrkey);
     if (mjson_find(fb, len, apath, &arr, &al) == MJSON_TOK_ARRAY) {
@@ -3380,9 +3435,12 @@ static void dj_graph_parse_file(const char *path, const char *arrkey, int isLeag
             if (*n >= cap || *poolIdx >= DJ_MAX_RECS || *regN >= regMax) break;
             void *slot = (char *)dst + (size_t)(*n) * elemsz;
             char *pool = s_djNamePool[*poolIdx];
+            const char *rec = arr + voff; int reclen = vlen;
+            if (wfb)
+                dj_record_in(wfb, wlen, arrkey, idbuf, &rec, &reclen);
             int rc = isLeague
-                ? DataJson_LoadCompetitionLeague(arr + voff, vlen, slot, pool, DJ_NAMEPOOL)
-                : DataJson_LoadCompetitionCup(arr + voff, vlen, slot, 0, pool, DJ_NAMEPOOL);
+                ? DataJson_LoadCompetitionLeague(rec, reclen, slot, pool, DJ_NAMEPOOL)
+                : DataJson_LoadCompetitionCup(rec, reclen, slot, 0, pool, DJ_NAMEPOOL);
             if (rc != 0) continue;
             (*poolIdx)++;
             struct dj_graph_reg *e = &reg[(*regN)++];
@@ -3398,7 +3456,7 @@ static void dj_graph_parse_file(const char *path, const char *arrkey, int isLeag
             e->hasPlayoffLinks = 0;
             if (isLeague) {
                 const char *pl; int pll;
-                if (mjson_find(arr + voff, vlen, "$.playoff_links", &pl, &pll) == MJSON_TOK_ARRAY) {
+                if (mjson_find(rec, reclen, "$.playoff_links", &pl, &pll) == MJSON_TOK_ARRAY) {
                     int p2 = 0, vo, vl, t2;
                     if (fast_array_next(pl, pll, p2, &vo, &vl, &t2) != 0) e->hasPlayoffLinks = 1;
                 }
@@ -3406,6 +3464,7 @@ static void dj_graph_parse_file(const char *path, const char *arrkey, int isLeag
             (*n)++;
         }
     }
+    free(wfb);
     free(fb);
 }
 

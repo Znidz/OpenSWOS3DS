@@ -817,6 +817,13 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Invalid --replay-max-errors value '%s' (expected >= 1)\n", v);
                 return 1;
             }
+        } else if ((v = match_kv(a, "world")) != NULL) {
+            /* The football world for this run, over SWOS.ini's (include/world.h). */
+            if (World_FromTag(v) < 0) {
+                fprintf(stderr, "--world: no world '%s'\n", v);
+                return 1;
+            }
+            snprintf(opts.world, sizeof opts.world, "%s", v);
         } else if (strncmp(a, "--career-golden", 15) == 0 || strncmp(a, "--golden-", 9) == 0) {
             /* The golden career test (src/career_autopilot.c, scripts/career_golden_test.sh). */
             extern int32_t CareerAutopilot_ParseArg(const char *a);

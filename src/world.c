@@ -5,6 +5,7 @@
 
 static const char *const kTags[WORLD_COUNT] = {
     "9697",
+    "2627",
 };
 
 static WorldId s_world = WORLD_9697;

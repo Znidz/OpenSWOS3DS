@@ -10,3 +10,6 @@ GER-BAYERN    EUROPE/GERMANY/1. LIGA/BAYERN
 ESP-BARCELONA EUROPE/SPAIN/PRIMERA DIVISION/BARCELONA
 SCO-CELTIC    EUROPE/SCOTLAND/PREMIER DIVISION/CELTIC
 BRA-FLAMENGO  SOUTH AMERICA/BRAZIL/FLAMENGO
+# A world other than 96/97: @<tag> before the path (include/world.h). Played only where that
+# world's data is (bin/data_json/worlds/<tag>/, not in git yet); skipped elsewhere.
+ITA2627-NAPOLI @2627 EUROPE/ITALY/SERIE A/NAPOLI

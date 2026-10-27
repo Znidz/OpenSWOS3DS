@@ -18,7 +18,10 @@
 
 typedef enum {
     WORLD_9697 = 0,     /* Sensible World of Soccer 96/97 */
-    WORLD_COUNT         /* WORLD_2627 joins with its data (phase 3) */
+    WORLD_2627,         /* the SWOS 96/97 Mod's World 2026-27 (docs/WORLD_2026_27.md): its data
+                         * in data_json/worlds/2627/ over 96/97's, file by file and record by
+                         * record (src/save_format_json.c); phase 3 holds Italy's leagues */
+    WORLD_COUNT
 } WorldId;
 
 WorldId     World_Current(void);

@@ -6053,6 +6053,7 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
                      "kind", (int)w->kind, "etp", (int)w->etp, "rules", (int)w->rules,
                      "winner", (int)w->winner, "cup", (int)w->cup, "ties", (int)w->ties,
                      "early", (int)w->early);
+        mjson_printf(json_out_emit, &out, ",%Q:%d", "final_rules", (int)w->rules2);
         wp_emit_u16(&out, "teams", w->team, w->n);
         wp_emit_u8(&out, "places", w->prio, w->n);
         wp_emit_u16(&out, "points", w->pts, w->n);
@@ -6495,6 +6496,7 @@ static void apply_semantic_load(const char *src, int src_size)
             if (mjson_get_long(wp, wplen, "$.kind", &v) > 0) w->kind = (uint8_t)v;
             if (mjson_get_long(wp, wplen, "$.etp", &v) > 0) w->etp = (uint8_t)v;
             if (mjson_get_long(wp, wplen, "$.rules", &v) > 0) w->rules = (uint8_t)v;
+            if (mjson_get_long(wp, wplen, "$.final_rules", &v) > 0) w->rules2 = (uint8_t)v;
             if (mjson_get_long(wp, wplen, "$.winner", &v) > 0) w->winner = (uint16_t)v;
             if (mjson_get_long(wp, wplen, "$.cup", &v) > 0) w->cup = (uint8_t)v;
             w->n = (uint8_t)wp_load_u16(wp, wplen, "$.teams", w->team, WORLD_PLAYOFF_MAX);

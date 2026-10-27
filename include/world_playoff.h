@@ -19,6 +19,10 @@
  * two legs; Serie D's single, extra time): its ties are independent, so the career club's
  * bracket is its own tie, a contest of two (the other tie is decided at the season end).
  *
+ * And a Serie D group's placement play-off (the pack's knockouts: 2nd v 5th, 3rd v 4th,
+ * then the winners; single, extra time, then the better placed): it moves no club at the
+ * season end (gplay.c leaves it to the repechage), so it is played for itself.
+ *
  * And Serie C's national play-off (dplay.c c_lend / dp_perm_c): 28 clubs, the groups' 2nd-10th
  * and the cup winner's place -- group rounds (5th v 10th, 6th v 9th, 7th v 8th; then the 3
  * winners and the 4th, best v worst), national rounds with seeded draws (the 3rds, the cup
@@ -36,7 +40,7 @@
 #include "swos_types.h"
 
 enum { WORLD_PLAYOFF_NONE, WORLD_PLAYOFF_B_PLAYOUT, WORLD_PLAYOFF_B_PLAYOFF, WORLD_PLAYOFF_GROUP_TIE,
-       WORLD_PLAYOFF_C_PLAYOFF };
+       WORLD_PLAYOFF_C_PLAYOFF, WORLD_PLAYOFF_PLACEMENT };
 
 /* The contest under way or played this season (saved with the career). */
 #define WORLD_PLAYOFF_MAX 32
@@ -52,6 +56,7 @@ typedef struct {
     uint8_t  n;                 /* its clubs */
     uint8_t  etp;               /* level decided by penalties, not by the better placed */
     uint8_t  rules;             /* a group's tie: its round's flag byte (legs / e.t. / pens) */
+    uint8_t  rules2;            /* a group's placement play-off: its final's */
     uint16_t team[WORLD_PLAYOFF_MAX];   /* {country, ordinal} as the game packs it, entrant order */
     uint8_t  prio[WORLD_PLAYOFF_MAX];   /* a level tie goes to the lower (the place, the seed) */
     uint16_t pts[WORLD_PLAYOFF_MAX];    /* their points, wins, goals scored, places, groups */

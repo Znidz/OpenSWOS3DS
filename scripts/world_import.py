@@ -262,9 +262,11 @@ def italian_groups(picked, country, league):
 
 # The Mod's knockout play-offs (pack.json 'ko_playoffs'), compiled as tools/gplay.py's
 # compile_spec compiles them -- the same bytes, so src/league_playoffs.c walks them as
-# gplay.c does -- for the kinds played at our season end: promotion and play-out, entrants
-# [division, place], rounds of ties.
-KINDS = {"promotion": 1, "playout": 4}
+# gplay.c does -- for the kinds played at our season end (promotion, play-out) and the
+# placement play-offs the career club plays (gplay.c leaves them alone at the season end):
+# entrants [division, place], rounds of ties.
+KINDS = {"promotion": 1, "placement": 3, "playout": 4}   # (placement: the career club's
+                                                          # contest only -- no move, no draw)
 HOSTS = {"listed": 0, "better": 1, "drawn": 2, "neutral": 3}
 LEVELS = {"better": 0, "et_pens": 1, "et_better": 2, "pens": 3, "away_pens": 4, "away_better": 5}
 RESERVE = 0xFE
@@ -318,7 +320,7 @@ def italian_playoffs(country, league, picked=None):
     ndiv = len(mod["divisions"])
     spec = b"".join(compile_playoff(po, ndiv) for po in mod.get("ko_playoffs", [])
                     if po["kind"] in KINDS) + b"\0"
-    counts["play-offs compiled (promotion / play-out)"] += sum(
+    counts["play-offs compiled (promotion / placement / play-out)"] += sum(
         1 for po in mod.get("ko_playoffs", []) if po["kind"] in KINDS)
     seconds, top, flags = [], 0xFF, 0
     rules = (mod.get("second_teams") or {}).get("rules")

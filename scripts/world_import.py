@@ -18,10 +18,9 @@ teams in OpenSWOS team JSON, his packs) and writes what the game reads for that 
                                                         World_InstallBaked) -- committed, it
                                                         holds only league shapes
 
-Phase 3 is the first world inside today's limits, so it is ONE country in 96/97's shape:
-Italy's 51 slots hold Serie A (20, league 0), Serie B (20, league 1) and 11 Serie C clubs
-outside the league (league 4), as 96/97's 51 hold A 18, B 20 and 13 others. Every other
-country stays 96/97's (the overlay falls back to it).
+The world so far is ONE country, Italy, whole: 256 clubs, its league Serie A, Serie B and
+Serie C's three groups side by side (phase 4: a level of groups, include/league_groups.h),
+Serie D's nine outside it. Every other country stays 96/97's (the overlay falls back to it).
 
 What our engine cannot show yet is mapped, and counted on the way:
   - 16 players a team (the Mod's extra 14 are left out);
@@ -143,10 +142,20 @@ def team(entry, country, ordinal, global_number, league, home_nation):
     return {"uuid": tid, "checksum": checksum(players), "team": head, "players": players}
 
 
+SERIE_C_GROUPS = 3          # Serie C: three groups side by side under Serie B
+
+
+def mod_division(e):
+    div = e.get("x_swos9697", {}).get("division")    # a string in the Mod's data ("0")
+    return int(div) if div not in (None, "") else None
+
+
 def italy():
-    """Italy whole: Serie A (league 0), Serie B (league 1), then Serie C and D -- outside the
-    league (league 4) until a league can have their divisions (phase 4). 256 clubs: the
-    country's range of global numbers grows to them (world_data.c, resize_country)."""
+    """Italy whole, 256 clubs (the country's range of global numbers grows to them:
+    world_data.c, resize_country), in the Mod's divisions: Serie A 0, Serie B 1, Serie C's
+    groups 2..4 -- the league's five divisions -- and Serie D's groups 5..13, outside the
+    league until it can play their odd-sized groups (Team_IsOutsideLeague: a division past
+    the league's)."""
     base = json.load(open(os.path.join(BASE, "teams", "ITALY.json"), encoding="utf-8"))
     mod = json.load(open(os.path.join(MOD, "teams", "ITA.json"), encoding="utf-8"))
     slots = base["teams"]
@@ -154,29 +163,52 @@ def italy():
     home = collections.Counter(p["nationality"] for t in slots for p in t["players"]).most_common(1)[0][0]
     by_div = collections.defaultdict(list)
     for e in mod["teams"]:
-        div = e.get("x_swos9697", {}).get("division")    # a string in the Mod's data ("0")
-        by_div[int(div) if div not in (None, "") else None].append(e)
-    serie_a, serie_b, serie_c = by_div[0], by_div[1], by_div[2]
-    if len(serie_a) != 20 or len(serie_b) != 20 or len(serie_c) < 20:
-        sys.exit("Italy: expected Serie A 20, Serie B 20, a Serie C group, got %d %d %d"
-                 % (len(serie_a), len(serie_b), len(serie_c)))
-    lower = [e for d in sorted(k for k in by_div if k not in (None, 0, 1)) for e in by_div[d]]
-    picked = [(e, 0) for e in serie_a] + [(e, 1) for e in serie_b] + [(e, 4) for e in lower]
+        by_div[mod_division(e)].append(e)
+    sizes = [len(by_div[d]) for d in range(2 + SERIE_C_GROUPS)]
+    if sizes != [20] * (2 + SERIE_C_GROUPS) or None in by_div:
+        sys.exit("Italy: expected Serie A, B and C's groups of 20 and every club in a division,"
+                 " got %s" % sizes)
+    picked = [(e, d) for d in sorted(by_div) for e in by_div[d]]
     first = slots[0]["team"]["global_team_number"]   # recomputed at load (SetTeamGlobalNumbers)
     teams = [team(e, country, i, first + i, league, home) for i, (e, league) in enumerate(picked)]
     out = copy.copy(base)
     out["teams"], out["count"] = teams, len(teams)
-    return out
+    return out, picked
 
 
 def italian_league():
-    """96/97's record, resized: Serie A 20 (3 down), Serie B 20 (3 up), as 2026-27."""
+    """96/97's record, as 2026-27: Serie A 20 (3 down), Serie B 20 (3 up, 3 down) and
+    Serie C's three groups of 20 (each champion up; none down while Serie D is outside).
+    The Mod's play-offs (Serie B's third up, Serie C's play-outs) are not played yet."""
     leagues = json.load(open(os.path.join(BASE, "competitions", "leagues.json"), encoding="utf-8"))
     rec = copy.deepcopy(next(l for l in leagues["leagues"] if l["id"] == "_italianLeague"))
     a, b = rec["divisions"]
     a.update(teams=20, relegated=3)
-    b.update(teams=20, promoted=3)
+    b.update(teams=20, promoted=3, relegated=3)
+    for g in range(SERIE_C_GROUPS):
+        rec["divisions"].append(dict(b, teams=20, promoted=1, relegated=0))
+        # Display text: no string symbol has it (world_data_c bakes one).
+        rec["name"] += ["SERIE C GIRONE %s" % "ABC"[g]] * 2
+    rec["divisions_count"] = len(rec["divisions"])
     return {"type": leagues.get("type", "leagues"), "count": 1, "leagues": [rec]}
+
+
+def italian_groups(picked, country):
+    """The league's levels and, for each club that can play in Serie C, its group there by
+    its area (the Mod's "X/Y": X its Serie C group, Y its Serie D one)."""
+    levels = [(0, 1, [20]), (1, 1, [20]), (2, SERIE_C_GROUPS, [20] * SERIE_C_GROUPS)]
+    clubs = []
+    for ordinal, (e, league) in enumerate(picked):
+        if league >= 2 + SERIE_C_GROUPS:
+            continue
+        area = (e.get("x_swos9697", {}).get("area") or "").split("/")[0]
+        if area and "A" <= area <= "Z":
+            area = ord(area) - ord("A")
+        else:
+            area = None
+            counts["club with no Serie C area"] += 1
+        clubs.append((ordinal, league, area))
+    return {"name": "Italy", "country": country, "levels": levels, "clubs": clubs}
 
 
 def team_file_binary(teams):
@@ -189,7 +221,7 @@ GLOBAL_TEAM_NUMBERS = 2000      # the league state table they index (career_diy_
 WORLD_DATA_C = """/*
  * world_data.c -- the worlds' baked competition records (include/world.h).
  *
- * GENERATED by scripts/world_import.py from data_json/worlds/<tag>/competitions/: edit
+ * GENERATED by scripts/world_import.py from data_json/worlds/<tag>/: edit
  * the JSON (or the script), not this. World_InstallBaked copies each world's records over
  * 96/97's compiled ones at start-up, on both targets (frontend.c) -- the Amiga has no
  * JSON -- keeping each league's compiled playoff plumbing, as the SDL JSON install does.
@@ -197,6 +229,7 @@ WORLD_DATA_C = """/*
 #include "game_types.h"
 #include "competition_data.h"
 #include "world.h"
+#include "league_groups.h"
 
 %(externs)s
 
@@ -237,23 +270,67 @@ void World_InstallBaked(void)
         break;
     }
 }
+
+/* The leagues with groups side by side (src/league_groups.c): each one's levels, and the
+ * clubs that can play at them with their division in the team file and their area. */
+%(groups)s
+
+const LeagueGroups *World_LeagueGroups(int32_t *count)
+{
+    switch (World_Current()) {
+%(group_cases)s
+    default:
+        *count = 0;
+        return 0;
+    }
+}
 """
 
 
-def world_data_c(tag, leagues, resized):
-    externs, records, installs = set(), [], []
+def c_string(text):
+    return '"%s"' % text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def world_data_c(tag, leagues, resized, groups):
+    externs, strings, records, installs = set(), [], [], []
+    symbols = {}
     for country, n in resized:
         installs.append("        resize_country(%d, %d);" % (country, n))
     for rec in leagues["leagues"]:
-        baked = dict(rec, id="kWorld%s%s" % (tag, rec["id"]))
+        names = []
+        for n in rec["name"]:
+            if n and not n.startswith("_"):          # display text, not a string symbol
+                if n not in symbols:
+                    symbols[n] = "kWorld%s_name%d" % (tag, len(symbols))
+                    strings.append("static char %s[] = %s;" % (symbols[n], c_string(n)))
+                n = symbols[n]
+            elif n:
+                externs.add("extern char %s[];" % n)
+            names.append(n)
+        baked = dict(rec, id="kWorld%s%s" % (tag, rec["id"]), name=names)
         records.append("static " + emit_competitions.emit_league(baked))
         externs.add("extern CompetitionLeague %s;" % rec["id"])
-        externs.update("extern char %s[];" % n for n in rec["name"] if n)
         installs.append("        install_league(&%s, &%s);" % (rec["id"], baked["id"]))
     cases = "    case WORLD_%s:\n%s\n        break;" % (tag, "\n".join(installs))
+    group_tables, group_entries = [], []
+    for g in groups:
+        sym = "kWorld%s_%s" % (tag, g["name"].lower())
+        group_tables.append("static const LeagueLevel %sLevels[] = {\n%s\n};" % (sym, "\n".join(
+            "    { %d, %d, { %s } }," % (first, n, ", ".join(map(str, sizes)))
+            for first, n, sizes in g["levels"])))
+        rows = ["    { %d, %d, { %s, LEAGUE_GROUPS_NO_AREA } }," % (
+            o, b, "LEAGUE_GROUPS_NO_AREA" if a is None else a) for o, b, a in g["clubs"]]
+        group_tables.append("static const LeagueGroupClub %sClubs[] = {\n%s\n};" % (sym, "\n".join(rows)))
+        group_entries.append("    { %d, %d, %sLevels, %d, %sClubs },   /* %s */" % (
+            g["country"], len(g["levels"]), sym, len(g["clubs"]), sym, g["name"]))
+    group_tables.append("static const LeagueGroups kWorld%sGroups[] = {\n%s\n};" % (
+        tag, "\n".join(group_entries)))
+    group_cases = ("    case WORLD_%s:\n        *count = %d;\n        return kWorld%sGroups;"
+                   % (tag, len(groups), tag))
     return WORLD_DATA_C % {"externs": "\n".join(sorted(externs)),
-                           "records": "\n\n".join(records), "cases": cases,
-                           "globals": GLOBAL_TEAM_NUMBERS}
+                           "records": "\n\n".join(strings + records), "cases": cases,
+                           "globals": GLOBAL_TEAM_NUMBERS,
+                           "groups": "\n\n".join(group_tables), "group_cases": group_cases}
 
 
 def write(path, data):
@@ -267,7 +344,7 @@ def write(path, data):
 def main():
     if not os.path.isdir(MOD):
         sys.exit("no %s: the Mod's data (Davide's private copies) is not here" % os.path.relpath(MOD, REPO))
-    teams, leagues = italy(), italian_league()
+    (teams, picked), leagues = italy(), italian_league()
     write(os.path.join(WORLD, "teams", "ITALY.json"), teams)
     write(os.path.join(WORLD, "competitions", "leagues.json"), leagues)
     name, packed = team_file_binary(teams)
@@ -276,8 +353,9 @@ def main():
     open(path, "wb").write(packed)
     print("wrote", os.path.relpath(path, REPO), "(%d bytes)" % len(packed))
     with open(os.path.join(REPO, "src", "world_data.c"), "w") as f:
-        f.write(world_data_c("2627", leagues, [(teams["teams"][0]["team"]["country_number"],
-                                                 teams["count"])]))
+        country = teams["teams"][0]["team"]["country_number"]
+        f.write(world_data_c("2627", leagues, [(country, teams["count"])],
+                             [italian_groups(picked, country)]))
     print("wrote src/world_data.c")
     for what, n in sorted(counts.items()):
         print("  %-52s %d" % (what, n))

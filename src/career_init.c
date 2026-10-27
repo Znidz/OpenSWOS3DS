@@ -38,6 +38,7 @@ extern uint16_t _lastOfferPrimaryPlayerOrdinal;
 extern uint16_t _offerNegotiationAttemptCount;
 extern uint16_t _careerSeasonsCompleted;
 #include "career_params.h"
+#include "league_groups.h"
 extern uint16_t _currentSeasonShowing;
 extern uint16_t _seasonTransferQuota;
 extern uint16_t _pendingForeignPlayerCount;
@@ -458,6 +459,7 @@ void Career_ContinueToNextSeasonInitTeamAndFunds(uint16_t teamNumber, uint32_t b
 /* --- External globals (Chunk 197) --- */
 extern uint16_t _worldCupHostTeam;
 extern uint8_t  _diyLeagueSeasonStateTable[];
+extern uint8_t  _diyLeagueScratchBuffer[];
 extern uint16_t _sameNationalCallFlag;
 extern uint16_t _boardConfidenceHistory0;
 extern uint16_t _boardConfidenceHistory1;
@@ -1063,6 +1065,10 @@ void InitializeNewSeason(void)
     if (_seasonPlaying == 100)
         _seasonPlaying = 0;
 
+    /* A league with groups side by side: the season's one-division moves
+     * become one-level moves (src/league_groups.c). None in 96/97. */
+    LeagueGroups_Apply((const int8_t *)_diyLeagueSeasonStateTable,
+                       (int8_t *)_diyLeagueScratchBuffer);
     DIY_SaveLeagueScratchToTable();
 
     _boardConfidenceMod0 = 0;

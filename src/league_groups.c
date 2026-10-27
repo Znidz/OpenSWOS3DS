@@ -100,6 +100,16 @@ static void apply_one(const LeagueGroups *lg, const int8_t *table, int8_t *scrat
         }
 }
 
+const LeagueGroups *LeagueGroups_ForCountry(uint16_t country)
+{
+    int32_t n = 0;
+    const LeagueGroups *lg = World_LeagueGroups(&n);
+    for (int32_t i = 0; i < n; i++)
+        if (lg[i].country == country)
+            return &lg[i];
+    return 0;
+}
+
 void LeagueGroups_Apply(const int8_t *table, int8_t *scratch)
 {
     int32_t n = 0;

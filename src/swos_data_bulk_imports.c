@@ -281,7 +281,9 @@ uint8_t _teamsIndex[100];
  * native width regardless of bitness. The matching extern in teams.c
  * was retyped from `uint32_t[]` to `void *[]`. */
 void *_teamsPtrTable[100];
-uint8_t _teamsTable[100];
+/* Indexed by a club's ordinal in its team file: one per club a file can hold (256,
+ * TEAM_FILE_MAX_TEAMS; 96/97's files stay under 100, a world's Italy has 256). */
+uint8_t _teamsTable[256];
 /* MOVED to careerFileBufferBuf overlay (see swos_globals_career_overlay.c): tertiaryCompetitionName */
 // int8_t tertiaryCompetitionName[36];
 /* MOVED to careerFileBufferBuf overlay (see swos_globals_career_overlay.c): trainingMatchSavedPlayers */

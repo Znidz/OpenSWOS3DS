@@ -14,6 +14,7 @@
 #include "auto_skip_debug.h"
 #include "endian_helpers.h"
 #include "game_types.h"
+#include "fixture_rounds.h"
 #include "string_utils.h"
 #include "random.h"
 #include "deterministic.h"
@@ -9080,7 +9081,10 @@ void InitDIYCompetitionFromTableEntry(uint16_t idx, uint8_t *table)
      * (idx*6 + 13) = divisions[idx].teams (field at Division
      * offset 0). */
     Division *divisions = (Division *)(table + 13);
-    if (divisions[idx].teams & 1) {
+    /* An odd division only where its pair table is real rounds (a world's,
+     * include/fixture_rounds.h): the original's odd tables give the career
+     * club two matches on some days, which its calendar cannot hold. */
+    if (!FixtureRounds_Real(divisions[idx].teams)) {
         _panicReasonCode = 0x1313;
         PanicHaltLoop();
     }

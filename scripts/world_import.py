@@ -18,9 +18,9 @@ teams in OpenSWOS team JSON, his packs) and writes what the game reads for that 
                                                         World_InstallBaked) -- committed, it
                                                         holds only league shapes
 
-The world so far is ONE country, Italy, whole: 256 clubs, its league Serie A, Serie B and
-Serie C's three groups side by side (phase 4: a level of groups, include/league_groups.h),
-Serie D's nine outside it. Every other country stays 96/97's (the overlay falls back to it).
+The world so far is ONE country, Italy, whole: 256 clubs, its league Serie A, Serie B,
+Serie C's three groups side by side and Serie D's nine (phase 4: levels of groups,
+include/league_groups.h; Serie D's odd groups play real rounds, include/fixture_rounds.h). Every other country stays 96/97's (the overlay falls back to it).
 
 What our engine cannot show yet is mapped, and counted on the way:
   - 16 players a team (the Mod's extra 14 are left out);
@@ -40,6 +40,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import sys
 import uuid
 
@@ -152,10 +153,8 @@ def mod_division(e):
 
 def italy():
     """Italy whole, 256 clubs (the country's range of global numbers grows to them:
-    world_data.c, resize_country), in the Mod's divisions: Serie A 0, Serie B 1, Serie C's
-    groups 2..4 -- the league's five divisions -- and Serie D's groups 5..13, outside the
-    league until it can play their odd-sized groups (Team_IsOutsideLeague: a division past
-    the league's)."""
+    world_data.c, resize_country), in the Mod's divisions, the league's fourteen: Serie A 0,
+    Serie B 1, Serie C's groups 2..4, Serie D's 5..13."""
     base = json.load(open(os.path.join(BASE, "teams", "ITALY.json"), encoding="utf-8"))
     mod = json.load(open(os.path.join(MOD, "teams", "ITA.json"), encoding="utf-8"))
     slots = base["teams"]
@@ -176,38 +175,56 @@ def italy():
     return out, picked
 
 
+def mod_league():
+    pack = json.load(open(os.path.join(MOD, "packs", "ita", "pack.json"), encoding="utf-8"))
+    return next(c for c in pack["competitions"] if c["key"] == "league")
+
+
 def italian_league():
-    """96/97's record, as 2026-27: Serie A 20 (3 down), Serie B 20 (3 up, 3 down) and
-    Serie C's three groups of 20 (each champion up; none down while Serie D is outside).
-    The Mod's play-offs (Serie B's third up, Serie C's play-outs) are not played yet."""
+    """96/97's record, as 2026-27's pyramid: Serie A 20 (3 down), Serie B 20 (3 up, 3 down),
+    Serie C's three groups of 20 (each champion up, 3 down) and Serie D's nine groups of 17
+    or 18 (each champion up; none down, while no pool below takes them). The Mod's play-offs
+    and play-outs (Serie B's third up, Serie C's and D's) are not played yet."""
     leagues = json.load(open(os.path.join(BASE, "competitions", "leagues.json"), encoding="utf-8"))
     rec = copy.deepcopy(next(l for l in leagues["leagues"] if l["id"] == "_italianLeague"))
     a, b = rec["divisions"]
     a.update(teams=20, relegated=3)
     b.update(teams=20, promoted=3, relegated=3)
-    for g in range(SERIE_C_GROUPS):
-        rec["divisions"].append(dict(b, teams=20, promoted=1, relegated=0))
+    mod = mod_league()["divisions"]
+    for d in mod[2:2 + SERIE_C_GROUPS]:
+        rec["divisions"].append(dict(b, teams=d["teams"], promoted=1, relegated=3))
+    for d in mod[2 + SERIE_C_GROUPS:]:
+        rec["divisions"].append(dict(b, teams=d["teams"], promoted=1, relegated=0))
+    for d in mod[2:]:
         # Display text: no string symbol has it (world_data_c bakes one).
-        rec["name"] += ["SERIE C GIRONE %s" % "ABC"[g]] * 2
+        rec["name"] += [d["names"]["*"][0]] * 2
     rec["divisions_count"] = len(rec["divisions"])
     return {"type": leagues.get("type", "leagues"), "count": 1, "leagues": [rec]}
 
 
-def italian_groups(picked, country):
-    """The league's levels and, for each club that can play in Serie C, its group there by
-    its area (the Mod's "X/Y": X its Serie C group, Y its Serie D one)."""
-    levels = [(0, 1, [20]), (1, 1, [20]), (2, SERIE_C_GROUPS, [20] * SERIE_C_GROUPS)]
+def italian_groups(picked, country, league):
+    """The league's levels and each club's group at the levels of groups by its area (the
+    Mod's "X/Y": X its Serie C group, Y its Serie D one)."""
+    rec = league["leagues"][0]
+    sizes = [d["teams"] for d in rec["divisions"]]
+    levels, first = [], 0
+    for n in (1, 1, SERIE_C_GROUPS, len(sizes) - 2 - SERIE_C_GROUPS):
+        name = None
+        if n > 1:       # the groups' names without the group: "SERIE D GIRONE A" -> "SERIE D"
+            names = [rec["name"][2 * d] for d in range(first, first + n)]
+            name = re.sub(r"\s*\bGIRONE\s*$", "", os.path.commonprefix(names)).strip()
+        levels.append((first, n, sizes[first:first + n], name))
+        first += n
     clubs = []
-    for ordinal, (e, league) in enumerate(picked):
-        if league >= 2 + SERIE_C_GROUPS:
-            continue
-        area = (e.get("x_swos9697", {}).get("area") or "").split("/")[0]
-        if area and "A" <= area <= "Z":
-            area = ord(area) - ord("A")
-        else:
-            area = None
-            counts["club with no Serie C area"] += 1
-        clubs.append((ordinal, league, area))
+    for ordinal, (e, division) in enumerate(picked):
+        areas = []
+        for letter in ((e.get("x_swos9697", {}).get("area") or "").split("/") + ["", ""])[:2]:
+            if len(letter) == 1 and "A" <= letter <= "Z":
+                areas.append(ord(letter) - ord("A"))
+            else:
+                areas.append(None)
+                counts["club without an area at a level of groups"] += 1
+        clubs.append((ordinal, division, areas))
     return {"name": "Italy", "country": country, "levels": levels, "clubs": clubs}
 
 
@@ -230,6 +247,7 @@ WORLD_DATA_C = """/*
 #include "competition_data.h"
 #include "world.h"
 #include "league_groups.h"
+#include "fixture_rounds.h"
 
 %(externs)s
 
@@ -271,8 +289,8 @@ void World_InstallBaked(void)
     }
 }
 
-/* The leagues with groups side by side (src/league_groups.c): each one's levels, and the
- * clubs that can play at them with their division in the team file and their area. */
+/* The leagues with groups side by side (src/league_groups.c): each one's levels, and its
+ * clubs with their division in the team file and their area at each level of groups. */
 %(groups)s
 
 const LeagueGroups *World_LeagueGroups(int32_t *count)
@@ -294,6 +312,12 @@ def c_string(text):
 def world_data_c(tag, leagues, resized, groups):
     externs, strings, records, installs = set(), [], [], []
     symbols = {}
+
+    def symbol(text):
+        if text not in symbols:
+            symbols[text] = "kWorld%s_name%d" % (tag, len(symbols))
+        return symbols[text]
+
     for country, n in resized:
         installs.append("        resize_country(%d, %d);" % (country, n))
     for rec in leagues["leagues"]:
@@ -301,8 +325,7 @@ def world_data_c(tag, leagues, resized, groups):
         for n in rec["name"]:
             if n and not n.startswith("_"):          # display text, not a string symbol
                 if n not in symbols:
-                    symbols[n] = "kWorld%s_name%d" % (tag, len(symbols))
-                    strings.append("static char %s[] = %s;" % (symbols[n], c_string(n)))
+                    strings.append("static char %s[] = %s;" % (symbol(n), c_string(n)))
                 n = symbols[n]
             elif n:
                 externs.add("extern char %s[];" % n)
@@ -311,15 +334,20 @@ def world_data_c(tag, leagues, resized, groups):
         records.append("static " + emit_competitions.emit_league(baked))
         externs.add("extern CompetitionLeague %s;" % rec["id"])
         installs.append("        install_league(&%s, &%s);" % (rec["id"], baked["id"]))
+    installs.append("        FixtureRounds_Install();")
     cases = "    case WORLD_%s:\n%s\n        break;" % (tag, "\n".join(installs))
     group_tables, group_entries = [], []
     for g in groups:
         sym = "kWorld%s_%s" % (tag, g["name"].lower())
-        group_tables.append("static const LeagueLevel %sLevels[] = {\n%s\n};" % (sym, "\n".join(
-            "    { %d, %d, { %s } }," % (first, n, ", ".join(map(str, sizes)))
-            for first, n, sizes in g["levels"])))
-        rows = ["    { %d, %d, { %s, LEAGUE_GROUPS_NO_AREA } }," % (
-            o, b, "LEAGUE_GROUPS_NO_AREA" if a is None else a) for o, b, a in g["clubs"]]
+        rows = []
+        for first, n, sizes, name in g["levels"]:
+            if name:
+                strings.append("static char %s[] = %s;" % (symbol(name), c_string(name)))
+            rows.append("    { %d, %d, { %s }, %s }," % (first, n, ", ".join(map(str, sizes)),
+                                                       symbol(name) if name else "0"))
+        group_tables.append("static const LeagueLevel %sLevels[] = {\n%s\n};" % (sym, "\n".join(rows)))
+        rows = ["    { %d, %d, { %s } }," % (o, b, ", ".join(
+            "LEAGUE_GROUPS_NO_AREA" if x is None else str(x) for x in a)) for o, b, a in g["clubs"]]
         group_tables.append("static const LeagueGroupClub %sClubs[] = {\n%s\n};" % (sym, "\n".join(rows)))
         group_entries.append("    { %d, %d, %sLevels, %d, %sClubs },   /* %s */" % (
             g["country"], len(g["levels"]), sym, len(g["clubs"]), sym, g["name"]))
@@ -355,7 +383,7 @@ def main():
     with open(os.path.join(REPO, "src", "world_data.c"), "w") as f:
         country = teams["teams"][0]["team"]["country_number"]
         f.write(world_data_c("2627", leagues, [(country, teams["count"])],
-                             [italian_groups(picked, country)]))
+                             [italian_groups(picked, country, leagues)]))
     print("wrote src/world_data.c")
     for what, n in sorted(counts.items()):
         print("  %-52s %d" % (what, n))

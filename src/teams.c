@@ -19,6 +19,7 @@
 #include "career_status.h"
 #include "play_match_menu.h"
 #include "career_init.h"
+#include "league_groups.h"
 #ifdef SWOS_SDL_BUILD
 #include <stdlib.h>            /* getenv — SWOS_DATA_JSON team-load wire-in */
 #endif
@@ -2523,10 +2524,10 @@ void ChooseTeamsFriendlyInitFinish(void)
         } while (swapped);
     }
 
-    /* Clear teamsTable (100 bytes) — use volatile to prevent memset optimization */
+    /* Clear teamsTable (one byte per ordinal) — use volatile to prevent memset optimization */
     {
         volatile uint8_t *tt = (volatile uint8_t *)_teamsTable;
-        for (i = 0; i < 100; i++)
+        for (i = 0; i < TEAM_FILE_MAX_TEAMS; i++)
             tt[i] = 0;
     }
 
@@ -2908,6 +2909,42 @@ void SelectTeamsInit(void)
  * Asm register convention:
  *   in:  d0.b = mode (0xFF=default, or a nationality/country number)
  * ================================================================ */
+/* A league with levels of groups (include/league_groups.h) lists one row per LEVEL --
+ * "SERIE C" for its three groups -- since the picker has 10 rows and its row number is
+ * the division (`_leagueNumber = d7`); picking a level of groups lists its groups, a
+ * level deeper on the picker's stack. -1: the country's rows. */
+static int16_t s_groupLevel = -1;
+#define LEVEL_ROW 0x8000        /* _leagueNumbersTable: a level of groups, not a division */
+/* The depth of a country's league rows: 2, a level's groups one deeper. */
+#define COUNTRY_DEPTH (2 + (s_groupLevel >= 0))
+
+/* The rows of a league with groups, written on through names, comps and nums; how many. */
+static uint16_t groupedLeagueRows(const LeagueGroups *lg, uint8_t *compEntry,
+                                  void ***names, void ***comps, uint16_t **nums)
+{
+    char **nameTbl = comp_name_table((Competition *)compEntry);
+    uint16_t rows = 0;
+    for (int32_t l = 0; l < lg->levels; l++) {
+        const LeagueLevel *L = &lg->level[l];
+        if (s_groupLevel >= 0 && l != s_groupLevel)
+            continue;
+        if (s_groupLevel < 0 && L->groups > 1) {
+            *(*names)++ = (void *)L->name;
+            *(*comps)++ = compEntry;
+            *(*nums)++ = (uint16_t)(LEVEL_ROW | l);
+            rows++;
+            continue;
+        }
+        for (uint16_t d = L->first; d < L->first + L->groups; d++) {
+            *(*names)++ = nameTbl ? (void *)nameTbl[d * 2] : (void *)_divisionStringTable[d];
+            *(*comps)++ = compEntry;
+            *(*nums)++ = d;
+            rows++;
+        }
+    }
+    return rows;
+}
+
 __attribute__((used, externally_visible))
 void SelectTeamsFinalMenu(uint16_t mode)
 {
@@ -2945,6 +2982,7 @@ void SelectTeamsFinalMenu(uint16_t mode)
     uint16_t countryByte;
 
     _leagueNumber = 0;
+    s_groupLevel = -1;
     HLOG("SelectTeamsFinalMenu enter mode=%u\n", (unsigned)mode);
 
     /* Initialize customsLeague: offset 9 = comp.divisionsCount, offset 0xD = divisions[0].teams */
@@ -3004,7 +3042,7 @@ loc_E012:
     GetCountryName(countryForName);
 
     _gotCountryName = 0;
-    if (_teamDepthLevel == 2 && _isCountryNumber == 0)
+    if (_teamDepthLevel == COUNTRY_DEPTH && _isCountryNumber == 0)
         _gotCountryName = 1;
 
     /* loc_13E046: enumerate competitions */
@@ -3127,7 +3165,7 @@ skip_continental_check:
     if (_showCupsAndOther == 0 &&
         _teamsType != ORIGINAL_CUSTOM_TEAMS &&
         _teamsType != EDITED_CUSTOM_TEAMS &&
-        _teamDepthLevel != 2) {
+        _teamDepthLevel != COUNTRY_DEPTH) {
         goto loc_E086;
     }
 
@@ -3158,6 +3196,18 @@ skip_continental_check:
          * char* is 8 bytes so the stride is 16 and we must read 8
          * bytes — use typed `char **` indexing so the layout is
          * pointer-width-correct on both targets. */
+        {
+            const LeagueGroups *lg = (void *)compEntry == compList[0]
+                                   ? LeagueGroups_ForCountry(d7) : 0;
+            if (lg) {
+                d1 += groupedLeagueRows(lg, compEntry, &teamNamesPtr, &leaguesPtrOut,
+                                        &leagueNumsOut);
+                _numberOfLeagues = (int8_t)league->divisionsCount;
+                if (s_groupLevel >= 0)
+                    goto loc_E2D0;      /* a level's groups: only they */
+                goto loc_E086;
+            }
+        }
         divIdx = 0;
 loc_E246:
         {
@@ -3275,11 +3325,21 @@ loc_E2D0:
         if (_teamDepthLevel == 0)
             goto exit_return;
         _isCountryNumber = 0;
+        s_groupLevel = -1;      /* from a level's groups back to the country's rows */
         d7 = PopContinent();
         goto loc_E012;
     }
 
     PushLastSelectedTeam();
+
+    if (_leagueNumbersTable[d7] != 0xFFFF && (_leagueNumbersTable[d7] & LEVEL_ROW)) {
+        /* A level of groups: list its groups, a level deeper. */
+        s_groupLevel = (int16_t)(_leagueNumbersTable[d7] & 0xFF);
+        PushContinent(d6);
+        SetSelectedTeamsStackTop();
+        d7 = d6;
+        goto loc_E012;
+    }
 
     if (_loadTeam != 0)
         goto loc_E6E4;
@@ -3443,8 +3503,8 @@ loc_E65A:
     goto loc_E73A;
 
 loc_E6E4:
-    /* Load team file for selected league */
-    _leagueNumber = d7;
+    /* Load team file for selected league (a group: its division, not its row) */
+    _leagueNumber = s_groupLevel >= 0 ? _leagueNumbersTable[d7] : d7;
     if (LoadTeamFile((uint8_t)d6) != 0)
         goto exit_clear;
 

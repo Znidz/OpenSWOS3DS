@@ -3181,9 +3181,20 @@ static void dj_intern_names(const char *o, int ol, const char *path,
                     const void *addr = Translations_SymbolAddr(sym);
                     if (addr) {
                         out[i] = (char *)addr;                    /* compiled string symbol */
-                    } else if (used + n + 1 <= strpoolsz) {
-                        memcpy(strpool + used, sym, (size_t)n + 1); /* last resort: literal name */
-                        out[i] = strpool + used; used += n + 1;
+                    } else {
+                        /* Last resort: the literal name -- a world's own division names
+                         * ("SERIE D GIRONE A"), each usually twice (full name and
+                         * abbreviation): one copy in the pool serves both. */
+                        for (int k = 0; k < i; k++)
+                            if (out[k] && out[k] >= strpool && out[k] < strpool + used &&
+                                strcmp(out[k], sym) == 0) {
+                                out[i] = out[k];
+                                break;
+                            }
+                        if (!out[i] && used + n + 1 <= strpoolsz) {
+                            memcpy(strpool + used, sym, (size_t)n + 1);
+                            out[i] = strpool + used; used += n + 1;
+                        }
                     }
                 }
             }
@@ -3397,7 +3408,7 @@ int DataJson_LoadCompetitionLeague(const char *o, int ol, void *outv,
 #define DJ_MAX_RECS    280   /* name-pool slices: ~142 parsed + ~14 complex-country
                                 in-place + 20 standalone tournament/playoff in-place +
                                 26 special-comp in-place (region/career cups + customs) */
-#define DJ_NAMEPOOL    256
+#define DJ_NAMEPOOL    512   /* a world's league: 14 divisions of its own names */
 #define DJ_MAX_TABLES  72
 #define DJ_TABLE_SLOTS 16
 

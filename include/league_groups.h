@@ -18,11 +18,13 @@
 #define LEAGUE_GROUPS_NO_AREA    0xFF
 
 /* One level of the league's chain: a single division (groups 1) or groups side by side,
- * divisions first .. first + groups - 1, each sizes[i] clubs. */
+ * divisions first .. first + groups - 1, each sizes[i] clubs; a level of groups has a name
+ * of its own ("SERIE D"), the team picker's row for it. */
 typedef struct {
-    uint8_t first;
-    uint8_t groups;
-    uint8_t sizes[LEAGUE_GROUPS_MAX_GROUPS];
+    uint8_t     first;
+    uint8_t     groups;
+    uint8_t     sizes[LEAGUE_GROUPS_MAX_GROUPS];
+    const char *name;
 } LeagueLevel;
 
 /* A club that can play at a level of groups: its ordinal in the country's team file, its
@@ -44,6 +46,9 @@ typedef struct {
 
 /* The world's leagues with groups (src/world_data.c, generated); *count of them. */
 const LeagueGroups *World_LeagueGroups(int32_t *count);
+
+/* The league with groups of a country, NULL for one without. */
+const LeagueGroups *LeagueGroups_ForCountry(uint16_t country);
 
 /* At the season's turn, before the new league table is taken from the scratch copy:
  * `table` the season's (old) offsets, `scratch` the game's new ones, by global number. */

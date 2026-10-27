@@ -7102,19 +7102,17 @@ pastTeamLoad:
             d4 += 8;
 
             /* Get division/competition name string */
-            uint8_t strTableOff = compInfo[5];
-            if (strTableOff == 0) {
+            /* Embedded char *[] name table — 2 entries per division (full
+             * name + abbreviation): the abbreviation is divIdx * 2 + 1. Found
+             * by the record's type (comp_name_table), not the Amiga's
+             * self-offset byte (compInfo[5]): a league's table moved when
+             * divisions[] grew to LEAGUE_MAX_DIVISIONS, and the byte's offset
+             * then lands inside divisions[] -- garbage once a world's league
+             * fills them (World 2026-27's Italy, 14 divisions). */
+            char **nameTbl = comp_name_table((Competition *)compInfo);
+            if (!nameTbl) {
                 namePtr = (uint8_t *)_divStringTable[_currentDivisionIndex];
             } else {
-                /* Embedded char *[] name table — 2 entries per
-                 * division (full name + abbreviation). Amiga stride
-                 * was divIdx * 8 (= 2 × 4-byte slots), reading the
-                 * second slot via base+4. On 64-bit each entry is 8
-                 * bytes, so use typed `char **` indexing with
-                 * `divIdx * 2 + 1` to get the abbreviation. Same fix
-                 * as in SelectTeamsFinalMenu (teams.c). */
-                int16_t off = (int8_t)strTableOff;
-                char **nameTbl = (char **)(compInfo + 5 + off);
                 namePtr = (uint8_t *)nameTbl[_currentDivisionIndex * 2 + 1];
             }
 
@@ -7128,14 +7126,10 @@ pastTeamLoad:
             a5++; /* next entry */
         } else if (slotVal == 1) {
             /* --- Cup-style header (single line comp name + round info) --- */
-            uint8_t strTableOff = compInfo[5];
-            if (strTableOff != 0) {
-                /* Typed `char **` access — slot 1 is the abbreviation
-                 * (full name + abbreviation pair per div). */
-                int16_t off = (int8_t)strTableOff;
-                char **nameTbl = (char **)(compInfo + 5 + off);
+            /* Slot 1 is the abbreviation (full name + abbreviation pair). */
+            char **nameTbl = comp_name_table((Competition *)compInfo);
+            if (nameTbl)
                 namePtr = (uint8_t *)nameTbl[1];
-            }
 
             a5->fg = (uintptr_t)namePtr;
 
@@ -7206,12 +7200,10 @@ pastTeamLoad:
             }
         } else {
             /* --- Default (slotVal >= 2) header: same as cup but different path --- */
-            uint8_t strTableOff = compInfo[5];
-            if (strTableOff != 0) {
-                int16_t off = (int8_t)strTableOff;
-                char **nameTbl = (char **)(compInfo + 5 + off);
+            /* Slot 1 is the abbreviation (full name + abbreviation pair). */
+            char **nameTbl = comp_name_table((Competition *)compInfo);
+            if (nameTbl)
                 namePtr = (uint8_t *)nameTbl[1];
-            }
 
             a5->fg = (uintptr_t)namePtr;
 

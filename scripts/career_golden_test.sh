@@ -52,10 +52,13 @@ done
 [ -x "$BIN" ] || { echo "build $BIN first (make X86_64=1)" >&2; exit 2; }
 # NAME -> what --career-golden gets: new:<path> from the list, or a save in tests/career;
 # and its world, for a line that names one (@<tag>).
-declare -A WHAT WORLD
+declare -A WHAT WORLD ENVS
 SKIPPED=()
 while read -r name path; do
     case "$name" in ''|\#*) continue ;; esac
+    while [[ "$path" =~ ^[A-Z_][A-Z0-9_]*=[^\ ]*\  ]]; do   # NAME=VALUE: in its run's environment
+        ENVS[$name]+="${path%% *} "; path=${path#* }
+    done
     if [[ "$path" == @* ]]; then
         world=${path%% *}; world=${world#@}; path=${path#* }
         if [ ! -d "bin/data_json/worlds/$world" ]; then SKIPPED+=("$name (no world $world here)"); continue; fi
@@ -85,7 +88,7 @@ play() {
         new:*) ;;
         *)     cp "$FIXTURES/$what" "$dir/" || return 2 ;;
     esac
-    ( cd bin && HOME="$HOMEDIR" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SWOS_HARNESS_TURBO=1 \
+    ( cd bin && env ${ENVS[$1]:-} HOME="$HOMEDIR" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SWOS_HARNESS_TURBO=1 \
         timeout 900 ./SWOS.x86_64 ${WORLD[$1]:+--world=${WORLD[$1]}} \
         --career-golden="$what" --golden-seasons="$SEASONS" \
         --golden-out="$PWD/../$dir" ) > "$dir/run.log" 2>&1

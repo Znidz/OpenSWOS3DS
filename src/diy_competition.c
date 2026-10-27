@@ -364,6 +364,36 @@ void DIY_ShuffleLeagueTeamOrder(void)
         teamOffsets[i] = teamOffsets[j];
         teamOffsets[j] = tmpOff;
     }
+#ifdef SWOS_SDL_BUILD
+    /* Test (SWOS_TEST_REST_LAST=1): in a league of an odd number of clubs played in rounds
+     * (fixture_rounds.h), the career club takes the place that rests on the last match day
+     * -- the case the SWOS 96/97 Mod's 4.0.1 met (docs/WORLD_2026_27.md, phase 4). */
+    {
+        const char *t = getenv("SWOS_TEST_REST_LAST");
+        if (t && t[0] == '1' && (count & 1) && count >= 5 && FixtureRounds_Real(count)) {
+            const uint8_t *sched = _fixtureSchedulePtrTable[count - 2];
+            const uint16_t pairs = (uint16_t)(count * (count - 1) / 2), day = (uint16_t)((count - 1) / 2);
+            uint8_t plays[32] = { 0 };
+            int16_t rest = -1, mine = -1;
+            for (uint16_t k = (uint16_t)(pairs - day); k < pairs; k++)
+                plays[sched[2 * k]] = plays[sched[2 * k + 1]] = 1;
+            for (uint16_t p = 0; p < count; p++) {
+                const DIYTeamStats *st = (const DIYTeamStats *)((uint8_t *)&comp->base +
+                                         shuffleIdx[p] * 18u + DIY_STANDINGS_OFFSET);
+                if (!plays[p])
+                    rest = (int16_t)p;
+                if (st->teamSelOffset == -1)
+                    mine = (int16_t)p;
+            }
+            if (rest >= 0 && mine >= 0 && rest != mine) {
+                uint8_t x = shuffleIdx[rest];
+                shuffleIdx[rest] = shuffleIdx[mine];
+                shuffleIdx[mine] = x;
+                fprintf(stderr, "[test] the career club rests on the last match day (place %d)\n", rest);
+            }
+        }
+    }
+#endif
 }
 
 /* ================================================================

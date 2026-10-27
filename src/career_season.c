@@ -24,6 +24,10 @@
 #include "random.h"
 #include "statistics.h"
 #include "transfer_market.h"
+#include "league_playoffs.h"
+
+extern uint8_t _diyLeagueSeasonStateTable[];
+extern uint8_t _diyLeagueScratchBuffer[];
 
 /* ---- ASM externs ---- */
 extern uint16_t _selTeamNumber;
@@ -803,6 +807,11 @@ void Career_ProcessCompetitionForNextSeason(uint16_t compIndex)
     }
 
     DIY_ValidateLeagueScratchBuffer();
+
+    /* A world's play-offs and play-outs: after the original's moves are checked, the
+     * places they decide (one-level moves, placed by InitializeNewSeason's groups pass). */
+    LeaguePlayoffs_Decide(compIndex & 0xFF, (const int8_t *)_diyLeagueSeasonStateTable,
+                          (int8_t *)_diyLeagueScratchBuffer);
 }
 
 /* ================================================================
@@ -1613,6 +1622,8 @@ static void processPrimaryCompetitionForNextSeason(uint8_t *competition)
     uint16_t d7;
     uint8_t *qualCursor = (uint8_t *)_diyQualifiedTeamIndices;
 
+    LeaguePlayoffs_Begin();     /* a world's play-offs: the final tables (league_playoffs.c) */
+
     for (d7 = 0; d7 < numDivisions; d7++) {
         if (competition == _currentCompetitionPtr &&
             d7 == _currentDivisionIndex) {
@@ -1630,6 +1641,7 @@ static void processPrimaryCompetitionForNextSeason(uint8_t *competition)
                 DIY_CachePrimaryQualifiedTeamsGrid();
         }
         DIY_UpdatePromotionRelegationScratchCounts();
+        LeaguePlayoffs_KeepTable(competition, d7);
         qualCursor = DIY_CopyCompetitionTeamIndexTable(qualCursor);
     }
 

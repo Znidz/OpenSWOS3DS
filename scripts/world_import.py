@@ -228,6 +228,70 @@ def italian_groups(picked, country, league):
     return {"name": "Italy", "country": country, "levels": levels, "clubs": clubs}
 
 
+# The Mod's knockout play-offs (pack.json 'ko_playoffs'), compiled as tools/gplay.py's
+# compile_spec compiles them -- the same bytes, so src/league_playoffs.c walks them as
+# gplay.c does -- for the kinds played at our season end: promotion and play-out, entrants
+# [division, place], rounds of ties.
+KINDS = {"promotion": 1, "playout": 4}
+HOSTS = {"listed": 0, "better": 1, "drawn": 2, "neutral": 3}
+LEVELS = {"better": 0, "et_pens": 1, "et_better": 2, "pens": 3, "away_pens": 4, "away_better": 5}
+RESERVE = 0xFE
+
+
+def compile_playoff(po, ndiv):
+    kind = KINDS[po["kind"]]
+    ents = []
+    for e in po["entrants"]:
+        d, p = e
+        if not (0 <= d < ndiv and p >= 1):
+            sys.exit("%s: entrant %s" % (po["key"], e))
+        ents.append((0, d, p, 0))
+    rounds, nt = bytearray(), 0
+
+    def code(m):
+        if m == "BL":
+            return 0x3F
+        if isinstance(m, int):
+            return m
+        mm = re.fullmatch(r"([WL])(\d+)", str(m))
+        if not mm or int(mm.group(2)) >= nt:
+            sys.exit("%s: member %s" % (po["key"], m))
+        return {"W": 0x80, "L": 0xC0}[mm.group(1)] | int(mm.group(2))
+
+    for rd in po["rounds"]:
+        if "group" in rd or rd.get("pairing") or rd.get("clubs"):
+            sys.exit("%s: only rounds of listed ties here" % po["key"])
+        mem = [m for t in rd["ties"] for m in t]
+        legs = 3 if rd.get("series") else rd.get("legs", 1)
+        host = HOSTS[rd.get("host", "listed")] | (0x80 if rd.get("skip_if_same") else 0)
+        rounds += bytes((len(mem) // 2, legs, host, LEVELS[rd.get("level", "et_pens")], 0,
+                         rd.get("gap", 0)))
+        rounds += bytes(code(m) for m in mem)
+        nt += len(mem) // 2
+    ld = po.get("loser_div", 0)
+    ld = RESERVE if ld == "reserve" else ld
+    flags = 2 if po.get("host_by_record") else 0
+    return (bytes((kind, len(ents), len(po["rounds"]), po.get("winner_div", 0), ld, flags)) +
+            b"".join(bytes(e) for e in ents) + rounds)
+
+
+def italian_playoffs(country, league):
+    """Italy's play-off rules: the Mod's counts per division, its Italian rules (dplay.c:
+    Serie B's play-off and play-out, Serie C's play-off) and the pack's knockouts played
+    at the season end (its groups' play-outs; Serie D's go to the pool below, not yet)."""
+    mod = mod_league()
+    ndiv = len(mod["divisions"])
+    spec = b"".join(compile_playoff(po, ndiv) for po in mod.get("ko_playoffs", [])
+                    if po["kind"] in KINDS) + b"\0"
+    counts["play-offs compiled (promotion / play-out)"] += sum(
+        1 for po in mod.get("ko_playoffs", []) if po["kind"] in KINDS)
+    return {"name": "Italy", "country": country, "divisions": ndiv,
+            "promoted": [d["promoted"] for d in mod["divisions"]],
+            "relegated": [d["relegated"] for d in mod["divisions"]],
+            "italy": mod.get("playoffs") == "ita", "serieB": 1, "groupFirst": 2,
+            "groups": SERIE_C_GROUPS, "spec": spec}
+
+
 def team_file_binary(teams):
     """The binary TEAM.nnn of a team file, as scripts/emit_teams.py makes 96/97's."""
     return tf.dict_filename(teams), tf.rnc_pack(tf.dict_to_blob(teams), tf.dict_rnc_method(teams))
@@ -247,6 +311,7 @@ WORLD_DATA_C = """/*
 #include "competition_data.h"
 #include "world.h"
 #include "league_groups.h"
+#include "league_playoffs.h"
 #include "fixture_rounds.h"
 
 %(externs)s
@@ -302,6 +367,20 @@ const LeagueGroups *World_LeagueGroups(int32_t *count)
         return 0;
     }
 }
+
+/* The leagues' play-offs and play-outs (src/league_playoffs.c): the Mod's counts per
+ * division, its Italian rules, its knockouts compiled as tools/gplay.py compiles them. */
+%(playoffs)s
+
+const LeaguePlayoffs *World_LeaguePlayoffs(int32_t *count)
+{
+    switch (World_Current()) {
+%(po_cases)s
+    default:
+        *count = 0;
+        return 0;
+    }
+}
 """
 
 
@@ -309,7 +388,7 @@ def c_string(text):
     return '"%s"' % text.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def world_data_c(tag, leagues, resized, groups):
+def world_data_c(tag, leagues, resized, groups, playoffs):
     externs, strings, records, installs = set(), [], [], []
     symbols = {}
 
@@ -355,10 +434,25 @@ def world_data_c(tag, leagues, resized, groups):
         tag, "\n".join(group_entries)))
     group_cases = ("    case WORLD_%s:\n        *count = %d;\n        return kWorld%sGroups;"
                    % (tag, len(groups), tag))
+    po_tables, po_entries = [], []
+    for po in playoffs:
+        sym = "kWorld%s_%s" % (tag, po["name"].lower())
+        po_tables.append("static const uint8_t %sPromoted[] = { %s };" % (sym, ", ".join(map(str, po["promoted"]))))
+        po_tables.append("static const uint8_t %sRelegated[] = { %s };" % (sym, ", ".join(map(str, po["relegated"]))))
+        spec = po["spec"]
+        po_tables.append("static const uint8_t %sSpec[%d] = {\n%s\n};" % (sym, len(spec), "\n".join(
+            "    " + ", ".join("0x%02X" % b for b in spec[i:i + 16]) + "," for i in range(0, len(spec), 16))))
+        po_entries.append("    { %d, %d, %sPromoted, %sRelegated, %d, %d, %d, %d, %sSpec },   /* %s */" % (
+            po["country"], po["divisions"], sym, sym, int(po["italy"]), po["serieB"], po["groupFirst"],
+            po["groups"], sym, po["name"]))
+    po_tables.append("static const LeaguePlayoffs kWorld%sPlayoffs[] = {\n%s\n};" % (tag, "\n".join(po_entries)))
+    po_cases = ("    case WORLD_%s:\n        *count = %d;\n        return kWorld%sPlayoffs;"
+                % (tag, len(playoffs), tag))
     return WORLD_DATA_C % {"externs": "\n".join(sorted(externs)),
                            "records": "\n\n".join(strings + records), "cases": cases,
                            "globals": GLOBAL_TEAM_NUMBERS,
-                           "groups": "\n\n".join(group_tables), "group_cases": group_cases}
+                           "groups": "\n\n".join(group_tables), "group_cases": group_cases,
+                           "playoffs": "\n\n".join(po_tables), "po_cases": po_cases}
 
 
 def write(path, data):
@@ -383,7 +477,8 @@ def main():
     with open(os.path.join(REPO, "src", "world_data.c"), "w") as f:
         country = teams["teams"][0]["team"]["country_number"]
         f.write(world_data_c("2627", leagues, [(country, teams["count"])],
-                             [italian_groups(picked, country, leagues)]))
+                             [italian_groups(picked, country, leagues)],
+                             [italian_playoffs(country, leagues)]))
     print("wrote src/world_data.c")
     for what, n in sorted(counts.items()):
         print("  %-52s %d" % (what, n))

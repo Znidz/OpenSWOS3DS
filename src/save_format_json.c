@@ -24,6 +24,7 @@
 #include "world.h"             /* "world" in career and competition saves */
 #include "team_pool.h"         /* "team_pool" in career saves */
 #include "world_playoff.h"     /* "world_playoff" in career saves */
+#include "comp_identity.h"     /* COMPID_copaLibertadores: an old save's Copa (128) */
 #include "translations.h"   /* tr() — localize competition name symbols */
 
 extern uint8_t *_currentCompetitionPtr;
@@ -942,7 +943,7 @@ extern uint8_t  _trainingMatchSavedShirtNums[];
 extern uint8_t  _trainingMatchSavedTactics[];
 extern uint8_t  _lastMatchPlayers[];
 extern uint8_t  _lastMatchSavedShirtNums[];
-extern uint8_t  _careerLastMatchIndexByCompetitionSlot[];
+extern uint8_t  _careerLastMatchIndexByCompetitionSlot[256];
 extern uint8_t  _teamBudgetRankTable[];
 extern uint8_t  _playersOnTransferMarket[];
 extern uint8_t  _foreignMarketPlayers[];
@@ -1326,7 +1327,7 @@ static const FieldDesc s_career_scalars[] = {
     FA("last_match_players",              _lastMatchPlayers, 32,        FLD_BYTES),
     FA("last_match_saved_shirt_nums",     _lastMatchSavedShirtNums, 32, FLD_BYTES),
     FA("career_last_match_index_by_competition_slot",
-                                          _careerLastMatchIndexByCompetitionSlot, 162, FLD_BYTES),
+                                          _careerLastMatchIndexByCompetitionSlot, 256, FLD_BYTES),
     FA("team_budget_rank_table",          _teamBudgetRankTable, 128,    FLD_BYTES),
     FA("players_on_transfer_market",      _playersOnTransferMarket, 10, FLD_BYTES),
 
@@ -6376,6 +6377,32 @@ static void apply_semantic_load(const char *src, int src_size)
     load_ctx_league_standings((const char *)src, (int)src_size, "euro",
                    (DIYCompetitionEx *)&_euroCupsCompetitionContextBuf);
     PROF_END(comp_slots, "career-load");
+
+    /* Saves from before 2026-10-27: careerLastMatchIndexByCompetitionSlot (indexed by
+     * compId) was 162 bytes, and the Copa Libertadores was compId 128 -- the Hungarian
+     * cup's too. The array is now one byte per compId (the rest: 0xFF, as a new career
+     * has them), and a Copa under way in the South-American quaternary slot
+     * (_euroCupSlotIndex 3, which only the Copa sets) moves to 162 with its entry. */
+    {
+        const char *arr = NULL; int alen = 0, n = 0;
+        if (mjson_find(src, src_size, "$.career_scalars.career_last_match_index_by_competition_slot",
+                       &arr, &alen) == MJSON_TOK_ARRAY) {
+            int pos = 0, voff, vlen, vt;
+            while ((pos = fast_array_next(arr, alen, pos, &voff, &vlen, &vt)) != 0)
+                n++;
+        }
+        if (n > 0 && n < (int)sizeof(_careerLastMatchIndexByCompetitionSlot)) {
+            for (int i = n; i < (int)sizeof(_careerLastMatchIndexByCompetitionSlot); i++)
+                _careerLastMatchIndexByCompetitionSlot[i] = 0xFF;
+            DIYCompetition *q = &((DIYCompetitionEx *)&_euroCupsCompetitionContextBuf)->base;
+            if (_euroCupSlotIndex == 3 && q->field_2E == 128) {
+                q->field_2E = COMPID_copaLibertadores;
+                _careerLastMatchIndexByCompetitionSlot[COMPID_copaLibertadores] =
+                    _careerLastMatchIndexByCompetitionSlot[128];
+                _careerLastMatchIndexByCompetitionSlot[128] = 0xFF;
+            }
+        }
+    }
 
     PROF_START(team_ce);
     load_team_file_ex(src, src_size, "$.career_team",  &_careerTeam);

@@ -38,7 +38,7 @@ CompetitionTournament _copaLibertadores = {
        stage.ptsForWin); roundStringBase=5 (= totalMatchesInRound: 5 played stages
        groups+R16+QF+SF+FINAL, {1,1,1} is the champion sentinel). Matches
        africanNationsCup/asianCup (same 16-qualifier bracket). */
-    { { 128, 2, -1, 16, 40, 35, 0, 41, 1 }, 1, 0, 2, 3, 53, 5,
+    { { 162, 2, -1, 16, 40, 35, 0, 41, 1 }, 1, 0, 2, 3, 53, 5,
       { { 20, 5, 4 }, { 16, 0, 16 }, { 8, 0, 8 }, { 4, 0, 4 }, { 2, 0, 2 }, { 1, 1, 1 } }, 1 },
     { 0, -124, -124, -124, -124, 0 },
     { _aCopaLibertadores, _aCopaLibertadores_0 },
@@ -74,7 +74,7 @@ CompetitionTournament _copaLibertadoresCopy;
 
 /* CopaBaked_Install — the Amiga analog of DataJson_InstallCompetitionGraph's
  * dynamic-Copa path: append the {template, copy} pair to _careerContests (so the
- * copy is built + saved) and register the template by compId (so Comp_ById(128)
+ * copy is built + saved) and register the template by compId (so Comp_ById(162)
  * resolves it). Called once at startup from FrontEndPreLoopSetup (frontend.c). */
 void CopaBaked_Install(void)
 {

@@ -6,7 +6,7 @@
  *
  * Part of the competition dynamic / pointer-free refactor (Inc3 — see
  * docs/COMPETITION_DYNAMIC_REFACTOR.md §8d). Copa Libertadores is a brand-new,
- * data-only continental CLUB cup (compId 128, defined purely in
+ * data-only continental CLUB cup (compId 162, defined purely in
  * tournaments.json — no compiled record). Its career field is earned each
  * season: the champion + runner-up of each of the 10 CONMEBOL leagues feed the
  * NEXT season's Copa, giving exactly 10 x 2 = 20 teams.
@@ -116,7 +116,7 @@ Competition *Career_CopaWorkingCopy(void)
  * token stream at runtime, just before the -1 terminator.
  *
  * Idempotent (re-running finds Copa already present and returns) and inert when
- * Copa is not installed (Comp_ById(128) == NULL, e.g. SWOS_DATA_JSON disabled or
+ * Copa is not installed (Comp_ById(162) == NULL, e.g. SWOS_DATA_JSON disabled or
  * a build without the Copa data) or the fixed-size list has no free slot. Called
  * once from FrontEndPreLoopSetup on BOTH ports — after the SDL dynamic loader
  * (DataJson_InstallCompetitionGraph) or the Amiga bake (CopaBaked_Install) has
@@ -239,7 +239,7 @@ uint16_t Career_CopaLibertadoresQualifiedTeamCount(void)
 
 /* Career_CopaLibertadoresExpectedTeamCount — the count the season-transition
  * validation should assert: 20 (10 CONMEBOL leagues x champion+runner-up) when
- * Copa is INSTALLED (compId 128 present as a data competition), else 0. Keying
+ * Copa is INSTALLED (compId 162 present as a data competition), else 0. Keying
  * on installation keeps the validation correct on a build WITHOUT the Copa data
  * (e.g. SWOS_DATA_JSON disabled, or the Amiga tree before the bake) — there the
  * qualifier appends nothing, so 0 == 0 and the season-transition gate stays the

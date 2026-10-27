@@ -1127,10 +1127,10 @@ void InitializeNewSeason(void)
     _careerTeamLostMatch = 0;
     _currentMessage = 0;
 
-    /* Fill careerLastMatchIndexByCompetitionSlot with 0xFF (162 bytes, volatile to avoid memset) */
+    /* Fill careerLastMatchIndexByCompetitionSlot with 0xFF (one per compId, volatile to avoid memset) */
     {
         volatile uint8_t *dst = _careerLastMatchIndexByCompetitionSlot;
-        for (int16_t i = 161; i >= 0; i--)
+        for (int16_t i = 255; i >= 0; i--)
             *dst++ = 0xFF;
     }
 

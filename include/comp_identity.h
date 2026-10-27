@@ -86,12 +86,11 @@ enum CompId {
     COMPID_englishLeagueCup                  = 119,
     /* Dynamic / data-only competitions. NB the original's ids do NOT stop at 127:
      * its cups are stored negative (-128 = 128 the Hungarian cup, -127 = 129 the
-     * Icelandic cup ...) and the ids run to 161 -- 162..255 are free (a world's
-     * play-off uses 200, world_playoff.c). So 128 is ALSO the Hungarian cup: the
-     * Copa resolves by Comp_ById, whose table keeps the last registered of the
-     * two (it works because the Copa registers last). Moving the Copa to a free id
-     * changes what Brazilian career saves hold -- an open item, 2026-10-27. */
-    COMPID_copaLibertadores                  = 128,
+     * Icelandic cup ...) and the ids run to 161 -- 162..255 are free. The Copa
+     * takes the first of them (it was 128 until 2026-10-27, the Hungarian cup's
+     * too: a save from then holding 128 in the European-cup slot is translated on
+     * load, save_format_json.c); a world's play-off uses 200 (world_playoff.c). */
+    COMPID_copaLibertadores                  = 162,
 };
 
 /* Read a competition's id (compId = byte 0 of the record). Endian-neutral

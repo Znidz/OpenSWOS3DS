@@ -15,6 +15,7 @@
 #include "endian_helpers.h"
 #include "game_types.h"
 #include "fixture_rounds.h"
+#include "world_playoff.h"
 #include "string_utils.h"
 #include "random.h"
 #include "deterministic.h"
@@ -10507,8 +10508,15 @@ singleExtraTime:
 
 checkPenalties:
     /* roundPenalties[slotIdx] */
-    if (compEx->matchData.cup.roundPenalties[slotIdx] == 0)
+    if (compEx->matchData.cup.roundPenalties[slotIdx] == 0) {
+        /* A world's play-off: level, no replay -- its rule's club (world_playoff.c). */
+        const int32_t lw = WorldPlayoff_LevelWinner(
+            PACK_BE_U16(team1->team.countryNumber, team1->team.teamOrdinal),
+            PACK_BE_U16(team2->team.countryNumber, team2->team.teamOrdinal));
+        if (lw == 1) goto team1WinsFinal;
+        if (lw == 2) goto team2WinsFinal;
         goto drawResult;
+    }
     if (compEx->matchData.cup.roundPenalties[slotIdx] == 1)
         goto doPenalties;
     if (compEx->bracketScratch.groupSectionFlag == 0)
@@ -10529,8 +10537,14 @@ doPenalties:
 
 returnLegCheckPenalties:
     /* roundPenalties[slotIdx] */
-    if (compEx->matchData.cup.roundPenalties[slotIdx] == 0)
+    if (compEx->matchData.cup.roundPenalties[slotIdx] == 0) {
+        const int32_t lw = WorldPlayoff_LevelWinner(
+            PACK_BE_U16(team1->team.countryNumber, team1->team.teamOrdinal),
+            PACK_BE_U16(team2->team.countryNumber, team2->team.teamOrdinal));
+        if (lw == 1) goto team1WinsReturnLeg;
+        if (lw == 2) goto team2WinsReturnLeg;
         goto drawResult;
+    }
     if (compEx->matchData.cup.roundPenalties[slotIdx] == 1)
         goto doPenaltiesReturnLeg;
     if (compEx->bracketScratch.groupSectionFlag == 0)
@@ -10564,6 +10578,11 @@ team2WinsFinal:
     d7 |= 1;
 setDecisive:
     d7 |= 0x82;
+    /* (a two-legged tie is decided by its return leg, not its first) */
+    if (compEx->matchData.cup.roundFormat != 2 || compEx->matchData.cup.competitionFormat != 0)
+        WorldPlayoff_TieDecided(PACK_BE_U16(team1->team.countryNumber, team1->team.teamOrdinal),
+                                PACK_BE_U16(team2->team.countryNumber, team2->team.teamOrdinal),
+                                d7 & 1);
 
 careerUpdate:
     updateCareerAfterResult(team1, team2, d1, d2, d7);

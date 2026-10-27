@@ -11,6 +11,7 @@
  */
 
 #include "career_teams.h"
+#include "world_playoff.h"
 #include "translations.h"
 #include "endian_helpers.h"
 #include "game_types.h"
@@ -1775,7 +1776,8 @@ void Career_ProcessCurrentCompetitionSlotAfterMatch(void)
          * region = minSubstitutes */
         if (((DIYCompetitionEx *)slotPtr)->minSubstitutes != 0)
             return;
-        DIY_RebuildCompetitionAndTeamSelectionCaches();
+        if (!WorldPlayoff_CareerLeagueEnded())  /* a world's play-off the club plays (world_playoff.c) */
+            DIY_RebuildCompetitionAndTeamSelectionCaches();
     }
 }
 
@@ -1896,7 +1898,8 @@ void Career_OpenCompetitionSlotMenuAndApplyChanges(uint16_t d2)
         return;
     if (((DIYCompetitionEx *)slotPtr)->minSubstitutes != 0)
         return;
-    DIY_RebuildCompetitionAndTeamSelectionCaches();
+    if (!WorldPlayoff_CareerLeagueEnded())      /* a world's play-off the club plays (world_playoff.c) */
+        DIY_RebuildCompetitionAndTeamSelectionCaches();
 }
 
 /* ================================================================

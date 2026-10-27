@@ -12,6 +12,7 @@ uint16_t _teamsCountryNumbers[256];
 int32_t TeamPool_Swap(uint8_t c, uint8_t o) { (void)c; (void)o; return -1; }
 void TeamPool_SwapsDone(void) { }
 void LeagueGroups_Enter(uint16_t g) { (void)g; }
+WorldPlayoffState g_worldPlayoff;
 const LeaguePlayoffs *World_LeaguePlayoffs(int32_t *count) { *count = 0; return 0; }
 static const LeagueLevel LV[4] = { { 0, 1, { 20 }, 0 }, { 1, 1, { 20 }, 0 }, { 2, 3, { 20, 20, 20 }, 0 },
                                    { 5, 9, { 17, 17, 17, 18, 17, 18, 17, 17, 18 }, 0 } };

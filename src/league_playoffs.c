@@ -50,6 +50,7 @@
 #include "league_playoffs.h"
 #include "league_groups.h"
 #include "team_pool.h"
+#include "world_playoff.h"
 #include "game_types.h"
 #include "diy_competition.h"
 
@@ -134,6 +135,8 @@ static struct {
     u8 ng;
     u8 n[NDIV];
     struct dp_row t[NDIV][NT];
+    u16 po_win, out_win;        /* the career club's play-off / play-out played (world_playoff.c):
+                                   its winner's team number, 0: simulated */
 } DP_IN;
 
 static u32 dp_rng;
@@ -212,7 +215,14 @@ static void seeded(int kind, int *s, int *o, int n, int *win)
     for (int i = 0; i < n; i++) win[i] = dp_tie(kind, s[i], o[i], 2, s[i]);
 }
 
-#define OUT_HELD(t) ((t)[15].pts <= (t)[16].pts + 4)
+int32_t LeaguePlayoffs_TestHeld;        /* (a test: the play-out held whatever the points) */
+
+int32_t LeaguePlayoffs_OutHeld(uint16_t pts16, uint16_t pts17)
+{
+    return pts16 <= pts17 + 4 || LeaguePlayoffs_TestHeld;
+}
+
+#define OUT_HELD(t) LeaguePlayoffs_OutHeld((t)[15].pts, (t)[16].pts)
 
 static void serie_b(void)
 {
@@ -226,12 +236,16 @@ static void serie_b(void)
         int s1 = dp_tie(K_SEMI, 2, w67, 2, 2), s2 = dp_tie(K_SEMI, 3, w58, 2, 3);
         int h = dp_better(s1, s2) ? s1 : s2, o = h == s1 ? s2 : s1;
         int w = dp_tie(K_FINAL, h, o, 2, t[DPL(h)].pts == t[DPL(o)].pts ? -1 : h);
+        for (int k = 2; k < 8 && DP_IN.po_win; k++)     /* (played: its real winner) */
+            if (t[k].team == DP_IN.po_win) w = k;
         dp_move(w, -1);
     }
     if (!OUT_HELD(t)) {
         dp_move(16, 1);
     } else {
         int w = dp_tie(K_OUT, 15, 16, 2, t[15].pts == t[16].pts ? -1 : 15);
+        if (DP_IN.out_win == t[15].team) w = 15;        /* (played: its real winner) */
+        if (DP_IN.out_win == t[16].team) w = 16;
         dp_move(w == 15 ? 16 : 15, 1);
     }
 }
@@ -561,6 +575,9 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
     s_nmv = 0;
     if (lp->italy) {
         DP_IN.ng = lp->groups;
+        DP_IN.po_win = DP_IN.out_win = 0;
+        if (g_worldPlayoff.kind == WORLD_PLAYOFF_B_PLAYOUT)
+            DP_IN.out_win = g_worldPlayoff.winner;
         for (int32_t d = 0; d < NDIV; d++) {
             const int32_t src = d == 0 ? lp->serieB : lp->groupFirst + d - 1;
             DP_IN.n[d] = 0;

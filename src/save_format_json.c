@@ -23,6 +23,7 @@
 #include "endian_helpers.h"
 #include "world.h"             /* "world" in career and competition saves */
 #include "team_pool.h"         /* "team_pool" in career saves */
+#include "world_playoff.h"     /* "world_playoff" in career saves */
 #include "translations.h"   /* tr() — localize competition name symbols */
 
 extern uint8_t *_currentCompetitionPtr;
@@ -6002,6 +6003,20 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
         mjson_printf(json_out_emit, &out, "%s", "]}");
     }
 
+    /* A world's play-off the career club plays (world_playoff.c): which, its clubs (team
+     * numbers) and places, the winner once decided. */
+    if (g_worldPlayoff.kind) {
+        mjson_printf(json_out_emit, &out, ",\n  %Q:{%Q:%d,%Q:%d,%Q:%d,%Q:[", "world_playoff",
+                     "kind", (int)g_worldPlayoff.kind, "etp", (int)g_worldPlayoff.etp,
+                     "winner", (int)g_worldPlayoff.winner, "teams");
+        for (int i = 0; i < g_worldPlayoff.n; i++)
+            mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)g_worldPlayoff.team[i]);
+        mjson_printf(json_out_emit, &out, "],%Q:[", "places");
+        for (int i = 0; i < g_worldPlayoff.n; i++)
+            mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)g_worldPlayoff.prio[i]);
+        mjson_printf(json_out_emit, &out, "%s", "]}");
+    }
+
     /* Foreign-market player pool — fixed-size MarketPlayer[432]. Emit
      * all 432 slots so unpopulated entries (teamId == 0) round-trip
      * faithfully; the array is dense in practice for active careers. */
@@ -6407,6 +6422,31 @@ static void apply_semantic_load(const char *src, int src_size)
     {
         extern uint16_t _teamsLoaded;
         _teamsLoaded = 0;       /* (a pooled file: read again with this career's identities) */
+    }
+
+    /* A world's play-off under way (world_playoff.c); slot 4 follows it
+     * (WorldPlayoff_RestoreSlot, in the pointer rebuild). */
+    WorldPlayoff_Reset();
+    {
+        const char *wp = NULL;
+        int wplen = 0;
+        if (mjson_find(src, src_size, "$.world_playoff", &wp, &wplen) == MJSON_TOK_OBJECT) {
+            long v = 0;
+            const char *arr; int al, pos = 0, voff, vlen, vt, i = 0;
+            if (mjson_get_long(wp, wplen, "$.kind", &v) > 0) g_worldPlayoff.kind = (uint8_t)v;
+            if (mjson_get_long(wp, wplen, "$.etp", &v) > 0) g_worldPlayoff.etp = (uint8_t)v;
+            if (mjson_get_long(wp, wplen, "$.winner", &v) > 0) g_worldPlayoff.winner = (uint16_t)v;
+            if (mjson_find(wp, wplen, "$.teams", &arr, &al) == MJSON_TOK_ARRAY)
+                while (i < 8 && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
+                    if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
+                        g_worldPlayoff.team[i++] = (uint16_t)v;
+            g_worldPlayoff.n = (uint8_t)i;
+            pos = 0; i = 0;
+            if (mjson_find(wp, wplen, "$.places", &arr, &al) == MJSON_TOK_ARRAY)
+                while (i < 8 && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
+                    if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
+                        g_worldPlayoff.prio[i++] = (uint8_t)v;
+        }
     }
 
     /* Foreign-market player pool — fixed-size MarketPlayer[432]. */

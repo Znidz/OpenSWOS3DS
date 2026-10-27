@@ -40,6 +40,7 @@ extern uint16_t _careerSeasonsCompleted;
 #include "career_params.h"
 #include "league_groups.h"
 #include "team_pool.h"
+#include "world_playoff.h"
 extern uint16_t _currentSeasonShowing;
 extern uint16_t _seasonTransferQuota;
 extern uint16_t _pendingForeignPlayerCount;
@@ -1146,6 +1147,7 @@ void InitializeNewSeason(void)
     _tertiaryCompetitionPtr = 0;
     _quaternaryCompetitionPtr = 0;
     _diyCompetitionPtr = 0;
+    WorldPlayoff_Reset();       /* (last season's play-off: decided, gone) */
 
     _numSelectedTeams = 1;
     _teamSelectionKeyCacheCount = 0;
@@ -1441,6 +1443,7 @@ void InitNewSeason(uint8_t *src, uint16_t divisionIndex)
     _tertiaryCompetitionPtr = 0;
     _quaternaryCompetitionPtr = 0;
     _diyCompetitionPtr = 0;
+    WorldPlayoff_Reset();
 
     _teamSelectionKeyCacheCount = 0;
     _teamSelectionKeyCacheIndex = 0;
@@ -1666,6 +1669,7 @@ static void Rebuild_CompetitionSlotPointers(void)
             }
         }
     }
+    WorldPlayoff_RestoreSlot();     /* a world's play-off under way (world_playoff.c) */
 
     /* Slot 3 (quaternary, euro cups) — re-derive from the SAVED euro-cup
      * slot CONTEXT, not from quaternaryCompetitionPtr.

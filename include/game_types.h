@@ -1767,11 +1767,15 @@ typedef struct __attribute__((packed)) {
  * variants whose trailing arrays sat before the playoff pointers need reordering.
  * ================================================================== */
 
+/* A league's divisions: 96/97 has at most 4; a world more (the World 2026-27's Italy 14,
+ * its Serie C and D groups: docs/WORLD_2026_27.md phase 4). Two name strings each. */
+#define LEAGUE_MAX_DIVISIONS 16
+
 typedef struct __attribute__((packed)) {
     CompLeagueHeader header;              /* 13 B (was the CompetitionLeague header struct) */
-    Division         divisions[4];         /* divisionsCount says how many used */
+    Division         divisions[LEAGUE_MAX_DIVISIONS];  /* divisionsCount says how many used (96/97: <= 4) */
     uint8_t          reserved1;            /* was the per-variant trailing `unk1` byte */
-    char            *name[10];             /* division name strings (was text[N], N<=10) */
+    char            *name[2 * LEAGUE_MAX_DIVISIONS];   /* division name strings, two each (was text[N], N<=10) */
     char            *playoffLinkPtrs[2];   /* was the char* unk2[2] in _*_2_* variants (→ Playoffs/Leagues) */
     uint8_t          promotionLinkData[24];/* was the int8 unk2[24]/unk3[24]/unk2[8] qualifier-index bytes */
 } CompetitionLeague;

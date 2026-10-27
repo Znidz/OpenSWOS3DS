@@ -307,6 +307,21 @@ void byteswap_team_file_to_disk(void)
 }
 #endif
 
+/* A club outside its country's league: past the league's last division. The original
+ * tested league == 4 -- what every 96/97 club outside a league has, its countries having at
+ * most 4 divisions (checked against the whole database); a world's league can have more
+ * (LEAGUE_MAX_DIVISIONS), whose division 4 is a division. A country without a league keeps
+ * the original test. */
+int32_t Team_IsOutsideLeague(const TeamFile *t)
+{
+    extern void *_competitionsTable[];
+    void **entry = (void **)_competitionsTable[t->countryNumber & 0xFF];
+    const Competition *primary = entry ? (const Competition *)entry[0] : NULL;
+    if (primary && (intptr_t)primary != -1 && primary->type == 0 && !comp_is_type0_cup(primary->compId))
+        return t->league >= (uint8_t)((const CompetitionLeague *)primary)->header.divisionsCount;
+    return t->league == 4;
+}
+
 __attribute__((used, externally_visible))
 int16_t LoadTeamFile(uint16_t extNumber)
 {

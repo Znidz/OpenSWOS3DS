@@ -11,6 +11,8 @@
 
 /* ---- Team file loading functions ---- */
 int16_t LoadTeamFile(uint16_t extNumber);
+/* A club outside its country's league (was league == 4; teams.c). */
+int32_t Team_IsOutsideLeague(const TeamFile *t);
 void SetTeamGlobalNumbers(uint16_t numTeams, uint8_t *firstTeam);
 
 /* ---- Team identification ---- */

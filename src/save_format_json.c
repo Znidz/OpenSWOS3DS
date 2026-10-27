@@ -3356,10 +3356,10 @@ int DataJson_LoadCompetitionLeague(const char *o, int ol, void *outv,
     out->header.pointsForWin   = (int8_t)GN(o, ol, "$.points_for_win");
     out->header.subsAndMaxSubs = (int8_t)dj_subs_pair(o, ol, "$.max_subs", "$.subs_and_max_subs");
     out->reserved1             = (uint8_t)GN(o, ol, "$.reserved1");
-    /* divisions[4] */
+    /* divisions[LEAGUE_MAX_DIVISIONS] */
     const char *arr; int al, pos = 0, voff, vlen, vt, i = 0;
     if (mjson_find(o, ol, "$.divisions", &arr, &al) == MJSON_TOK_ARRAY) {
-        while (i < 4 && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0) {
+        while (i < LEAGUE_MAX_DIVISIONS && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0) {
             if (vt == MJSON_TOK_OBJECT) {
                 out->divisions[i].teams               = (int8_t)GN(arr + voff, vlen, "$.teams");
                 out->divisions[i].promoted            = (int8_t)GN(arr + voff, vlen, "$.promoted");
@@ -3372,7 +3372,7 @@ int DataJson_LoadCompetitionLeague(const char *o, int ol, void *outv,
         }
     }
 #undef GN
-    dj_intern_names(o, ol, "$.name", out->name, 10, strpool, strpoolsz);
+    dj_intern_names(o, ol, "$.name", out->name, 2 * LEAGUE_MAX_DIVISIONS, strpool, strpoolsz);
     dj_i8_array(o, ol, "$.promotion_link_data", (int8_t *)out->promotionLinkData, 24);
     return 0;
 }

@@ -1097,8 +1097,8 @@ int16_t IsTeamEligibleForOfferByRefSkill(TeamFileEx *team, uint16_t refSkill)
     if (teamNum == _selTeamNumber)
         return 1;
 
-    /* League type 4 → not eligible */
-    if (tfx->team.league == 4)
+    /* Outside its country's league → not eligible (was league == 4) */
+    if (Team_IsOutsideLeague(&tfx->team))
         return 1;
 
     flags = 0;

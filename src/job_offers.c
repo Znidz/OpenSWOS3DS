@@ -14,6 +14,7 @@
 #include "translations.h"  /* tr_fmt — localize the offer-letter text */
 #include "endian_helpers.h"
 #include "game_types.h"
+#include "teams.h"           /* Team_IsOutsideLeague */
 #include "menu_system.h"
 #include "random.h"
 #include "string_utils.h"
@@ -1171,7 +1172,7 @@ searchDomestic:
 
             /* Skip custom teams (type 4) */
             TeamFile *a0tf = (TeamFile *)a0;
-            if (a0tf->league == 4)
+            if (Team_IsOutsideLeague(a0tf))     /* was league == 4 */
                 continue;
 
             /* Must be same division (country). selTeamNumber MSB = country.
@@ -1231,7 +1232,7 @@ searchForeign:
             uint8_t *a0 = base + (uint32_t)idx * 0x2AC;
 
             TeamFile *a0tf = (TeamFile *)a0;
-            if (a0tf->league == 4)
+            if (Team_IsOutsideLeague(a0tf))     /* was league == 4 */
                 continue;
             /* Foreign job-offer search — skip teams from the user's own
              * country. MSB of selTeamNumber is the country byte; the LE
@@ -1319,7 +1320,7 @@ searchSacked:
             uint8_t *a0 = (&_teamFileBuffer + 2) + (uint32_t)idx * 0x2AC;
 
             TeamFile *a0tf2 = (TeamFile *)a0;
-            if (a0tf2->league == 4)
+            if (Team_IsOutsideLeague(a0tf2))    /* was league == 4 */
                 continue;
 
             /* Asm: move.w (a0),d3 — reads packed team number at offset 0 */

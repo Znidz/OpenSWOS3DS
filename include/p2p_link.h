@@ -51,6 +51,7 @@ typedef enum {
     P2P_FAIL_BUILD,         /* the builds play by different rules (a test build and a release) */
     P2P_FAIL_VERSION,       /* a different build: another commit, or uncommitted changes */
     P2P_FAIL_VIEW,          /* one plays the DOS view, the other the Amiga view */
+    P2P_FAIL_WORLD,         /* another football world (include/world.h) */
 } P2PLinkFailure;
 
 /* The rules a match is played by (P2PLink_GameplayFlags), one bit each. */

@@ -631,6 +631,7 @@ accepted for that key only (§13).
 | stuck on **CONNECTING TO SERVER** | nothing answering at that address | wrong address or port in **SERVER**, or UDP 19602 blocked (§5) |
 | **THE HOST DID NOT ANSWER** / CHECK THE ADDRESS, PORT AND FIREWALL | the other player was never reached | usually NATs that will not punch -- one player forwarding UDP 19602 on their router often fixes it; a private server with `--relay` always does, at the cost of latency (§4). Otherwise the firewall and forward (§5) |
 | **THE OTHER PLAYER HAS ANOTHER VERSION** / ONE OF YOU NEEDS TO UPDATE | different netplay numbers (`SWOS.log` names them), or a build with uncommitted changes | both download the latest build |
+| **YOU PLAY DIFFERENT WORLDS** / PICK THE SAME WORLD IN SWOS.INI | `[general] world` differs (the server lists only same-world games, so this is a direct-IP match) | both set the same `world` |
 | **YOUR BUILDS PLAY BY DIFFERENT RULES** / ONE OF YOU HAS A TEST BUILD | one build is an old tester build (before 2026-10-11) | both update (§8) |
 | **YOU PLAY BY DIFFERENT RULES** / CHECK FIRE_HOLD_LOCKOUT IN SWOS.INI | one has the original's fire-hold lockout on | `[gameplay] fire_hold_lockout`, the same on both. (AMIGA v DOS is NOT refused: the joiner plays the host's style) |
 | **ONE OF YOU PINNED THE VIEW** / RUN WITHOUT --VIEW | the same style, but one side started with `--view=` pinning the other view | run without `--view` (SWOS.ini has no view setting any more: `[gameplay] style` sets it) |

@@ -21,6 +21,7 @@
 #include "mjson.h"
 #include "game_types.h"
 #include "endian_helpers.h"
+#include "world.h"             /* "world" in career and competition saves */
 #include "translations.h"   /* tr() — localize competition name symbols */
 
 extern uint8_t *_currentCompetitionPtr;
@@ -306,6 +307,21 @@ static void load_str_pool_field(const char *buf, int buflen,
  *       scores on top). Saves from v2 are rejected.
  */
 #define SAVE_JSON_SCHEMA_VERSION 3
+
+/* The football world a save was made in (include/world.h): written by the career and
+ * competition saves as "world"; a save without it is 96/97, the world before worlds. A
+ * save of another world is refused: its teams and competitions are not this one's. */
+static int save_world_ok(const uint8_t *src, uint32_t size)
+{
+    char tag[16] = {0};
+    const int32_t w = mjson_get_string((const char *)src, (int)size, "$.world", tag, sizeof tag) > 0
+                    ? World_FromTag(tag) : (int32_t)WORLD_9697;
+    if (w == (int32_t)World_Current())
+        return 1;
+    SWOS_DBG("[save] made in world %s, this is %s: refused\n",
+             tag[0] ? tag : "9697", World_Tag());
+    return 0;
+}
 
 #define KIND_CAREER     "career"
 #define KIND_PRESET     "preset"
@@ -5663,9 +5679,11 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
         "{\n"
         "  %Q: %d,\n"
         "  %Q: %Q,\n"
+        "  %Q: %Q,\n"
         "  %Q: %d,\n  ",
         "schema_version", SAVE_JSON_SCHEMA_VERSION,
         "file_kind",      KIND_CAREER,
+        "world",          World_Tag(),
         "num_selected_teams", (int)_numSelectedTeams);
 
     emit_season_informations(json_out_emit, &out);
@@ -6375,6 +6393,10 @@ int16_t SaveJson_LoadCareer(uint8_t *filename, const uint8_t *src_unused,
         swos_io_free(src);
         return 1;
     }
+    if (!save_world_ok(src, src_size)) {
+        swos_io_free(src);
+        return 1;
+    }
 
     /* Clear the two surviving careerFileBuffer scalars before the typed load
      * repopulates them. The 256 KB careerFileBufferBuf overlay (which the
@@ -6814,9 +6836,10 @@ static int16_t write_competition_buf(uint8_t *filename, const char *kind)
     string_pool_reset();
 
     mjson_printf(json_out_emit, &out,
-        "{\n  %Q:%d,\n  %Q:%Q,\n  %Q:%u,\n  ",
+        "{\n  %Q:%d,\n  %Q:%Q,\n  %Q:%Q,\n  %Q:%u,\n  ",
         "schema_version", SAVE_JSON_SCHEMA_VERSION,
         "file_kind",      kind,
+        "world",          World_Tag(),
         "num_diy_teams",  (unsigned)_primaryCompetitionBuf.tourn.header.numTeams);
 
     /* primaryCompStringOffset is intentionally NOT saved — it's a
@@ -7018,7 +7041,7 @@ static int16_t load_competition_buf(uint8_t *filename, const char *kind)
     char file_kind[16] = {0};
     if (mjson_get_string((const char *)src, (int)src_size,
                          "$.file_kind", file_kind, sizeof(file_kind)) <= 0 ||
-        strcmp(file_kind, kind) != 0) {
+        strcmp(file_kind, kind) != 0 || !save_world_ok(src, src_size)) {
         swos_io_free(src);
         return 1;
     }

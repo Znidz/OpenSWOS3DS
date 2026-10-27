@@ -165,6 +165,7 @@ typedef struct {
     char                   assets_reminder_off[64]; /* [general] assets_reminder_off: the data versions whose "update your
                                                      * game data" reminder was dismissed (src/assets_check.c), "" none */
     char                   currency[8];      /* "pound" (default) or "dollar" — money symbol */
+    char                   world[8];         /* [general] world: the football world (include/world.h), "" = 9697 */
 } PlatformInitOptions;
 
 int  Platform_Init(const PlatformInitOptions *opts);

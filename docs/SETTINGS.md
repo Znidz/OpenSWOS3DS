@@ -74,6 +74,8 @@ mode=mono             ; mono | stereo
 [general]
 language=en           ; en | de | fr | es | it | nl
 currency=pound        ; pound | dollar | euro
+world=9697            ; the football world: 9697 (Sensible World of Soccer 96/97); a save
+                      ; and an online match are played in the world they were made in
 
 [dos]                 ; PC-only extras (Amiga is the definitive version)
 directory=grafs_dos   ; folder under bin/ to load the DOS assets from

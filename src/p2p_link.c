@@ -32,6 +32,7 @@
 #include <string.h>
 #include "build_info.h"      /* Build_Id: the handshake logs builds */
 #include "netplay_compat.h"  /* NETPLAY_COMPAT: and compares this */
+#include "world.h"           /* and the football world */
 
 #ifdef SWOS_NETPLAY
 
@@ -124,6 +125,8 @@ typedef struct {
     char     build[9];          /* Build_Id()'s first 8: the commit, for the log */
     uint16_t compat;            /* NETPLAY_COMPAT: what is compared */
     uint8_t  dirty;             /* built from uncommitted changes: plays only its commit */
+    uint8_t  world;             /* the football world (include/world.h); 0 = 96/97, which
+                                 * is what the byte always held before worlds */
 } Setup;
 
 /* The message being sent on one channel. Sending again replaces it: the new one
@@ -267,6 +270,7 @@ static void setup_local(Setup *s)
     strncpy(s->build, Build_Id(), 8);
     s->compat = NETPLAY_COMPAT;
     s->dirty  = strstr(Build_Id(), "-dirty") != NULL;
+    s->world  = (uint8_t)World_Current();
 }
 
 static P2PLinkFailure setup_mismatch(const Setup *mine, const Setup *theirs)
@@ -289,6 +293,12 @@ static P2PLinkFailure setup_mismatch(const Setup *mine, const Setup *theirs)
     if (!sameCommit)
         fprintf(stderr, "[p2p] the other player runs build %.8s, this is %.8s: both netplay %u\n",
                 theirs->build, mine->build, (unsigned)mine->compat);
+    /* The same football world: another world's clubs and competitions are another game. */
+    if (mine->world != theirs->world) {
+        fprintf(stderr, "[p2p] the other player plays world %u, this is %u: refused\n",
+                (unsigned)theirs->world, (unsigned)mine->world);
+        return P2P_FAIL_WORLD;
+    }
     if (mine->stateHi != theirs->stateHi || mine->stateLo != theirs->stateLo)
         return P2P_FAIL_STATE;
     /* The build's rules first: nothing in OPTIONS can make those agree. */
@@ -333,7 +343,7 @@ static void pkt_write_setup(uint8_t *p, const Setup *s)
     memcpy(p + 20, s->build, 8);
     BE_WRITE_U16(p + 28, s->compat);
     p[30] = s->dirty;
-    p[31] = 0;
+    p[31] = s->world;
 }
 
 static void pkt_read_setup(const uint8_t *p, Setup *s)
@@ -346,6 +356,7 @@ static void pkt_read_setup(const uint8_t *p, Setup *s)
     s->build[8] = '\0';
     s->compat      = BE_READ_U16(p + 28);
     s->dirty       = p[30];
+    s->world       = p[31];
 }
 
 /* The self-test's lossy wire: drop every Nth datagram a link sends, and flip a bit in
@@ -1053,6 +1064,7 @@ static P2PLinkFailure refuse_reason(uint8_t byte)
     case P2P_FAIL_BUILD:
     case P2P_FAIL_VERSION:
     case P2P_FAIL_VIEW:
+    case P2P_FAIL_WORLD:
         return (P2PLinkFailure)byte;
     default:
         return P2P_FAIL_PROTOCOL;   /* a reason this version does not know */
@@ -2069,6 +2081,21 @@ int32_t P2PLink_SelfTest(void)
         check(host.state == P2P_HOSTING && host.notice == P2P_FAIL_VERSION, "the host says which build");
         link_close(&mismatched);
     }
+    /* 4e. Another football world is refused. */
+    {
+        Setup theirs;
+        setup_local(&theirs);
+        theirs.world ^= 1;
+        memset(&mismatched, 0, sizeof mismatched); mismatched.sock = -1; mismatched.pingMs = -1;
+        mismatched.joinTimeoutMs = 1000;
+        check(link_join(&mismatched, "127.0.0.1", host.localPort, &theirs) == 0, "a player of another world joins");
+        P2PLink *two[2] = { &host, &mismatched };
+        pump(two, 2, 1500, link_settled, &mismatched);
+        check(mismatched.state == P2P_FAILED && mismatched.failure == P2P_FAIL_WORLD,
+              "it is refused: another world");
+        check(host.state == P2P_HOSTING && host.notice == P2P_FAIL_WORLD, "the host says which world");
+        link_close(&mismatched);
+    }
     /* 4d. Another commit with the same number plays -- unless either side has
      * uncommitted changes. */
     for (int32_t dirty = 0; dirty <= 1; dirty++) {
@@ -2231,6 +2258,8 @@ void P2PLink_FailureText(P2PLinkFailure failure, const char **line1, const char 
         *line1 = "THE SERVER'S RELAY HAS CLOSED"; *line2 = "FIND EACH OTHER AGAIN"; break;
     case P2P_FAIL_BUILD:
         *line1 = "YOUR BUILDS PLAY BY DIFFERENT RULES"; *line2 = "ONE OF YOU HAS A TEST BUILD"; break;
+    case P2P_FAIL_WORLD:
+        *line1 = "YOU PLAY DIFFERENT WORLDS"; *line2 = "PICK THE SAME WORLD IN SWOS.INI"; break;
     default:
         *line1 = ""; *line2 = ""; break;
     }

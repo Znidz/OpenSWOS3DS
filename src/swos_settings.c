@@ -282,6 +282,8 @@ static int handler(void *user, const char *section,
             snprintf(opts->currency, sizeof opts->currency, "%s", value);
         else if (eqi(name, "assets_reminder_off"))
             snprintf(opts->assets_reminder_off, sizeof opts->assets_reminder_off, "%s", value ? value : "");
+        else if (eqi(name, "world") && value && value[0])
+            snprintf(opts->world, sizeof opts->world, "%s", value);
     }
     /* Return nonzero on success, even for ignored keys — we don't want
      * inih to flag unknown sections as parse errors. */
@@ -601,6 +603,10 @@ static int settings_build(const PlatformInitOptions *opts, IniEntry *items, char
         "; assets_reminder_off: set by \"Don't remind me\" on the reminder that your game data was made by\n"
         "; an older OpenSWOS Setup -- the data versions it was about. Empty: remind (src/assets_check.c).",
         opts->assets_reminder_off };
+    SETTING(n) = (IniEntry){ "general","world",
+        "; world: 9697 -- the football world: its countries, clubs and competitions\n"
+        "; (docs/WORLD_2026_27.md). A save is played in the world it was made in.",
+        opts->world[0] ? opts->world : "9697" };
     if (n >= SETTINGS_MAX)
         fprintf(stderr, "[settings] the settings table is full (%d): raise SETTINGS_MAX\n", n);
     return n;

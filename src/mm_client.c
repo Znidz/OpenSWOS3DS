@@ -20,6 +20,7 @@
  */
 #include "mm_client.h"
 #include "netplay_compat.h"   /* NETPLAY_COMPAT: in the VERSION: tag */
+#include "world.h"            /* and the football world, if not 96/97 */
 
 #ifdef SWOS_SDL_BUILD
 
@@ -103,7 +104,8 @@ uint16_t MmClient_DefaultPort(void)
 
 /* The compatibility tag sent as VERSION:, OPENSWOS/<NETPLAY_COMPAT>: the server lists
  * a game only to players whose number is the same (Connections.cpp, PlayKey), so a
- * player never joins one the handshake would refuse (include/netplay_compat.h). */
+ * player never joins one the handshake would refuse (include/netplay_compat.h). A world
+ * other than 96/97 adds -<world> (MmClient_Connect). */
 #define MM_STR_(x) #x
 #define MM_STR(x)  MM_STR_(x)
 #ifdef SWOS_WASM_BUILD
@@ -655,8 +657,17 @@ int32_t MmClient_Connect(const char *host, uint16_t port,
 
     copy_str(s_mm.userName, sizeof s_mm.userName,
              userName && userName[0] ? userName : "PLAYER", MM_NAME_MAX - 1);
-    copy_str(s_mm.gameId, sizeof s_mm.gameId,
-             gameId && gameId[0] ? gameId : MM_GAME_ID_DEFAULT, MM_NAME_MAX - 1);
+    if (gameId && gameId[0]) {
+        copy_str(s_mm.gameId, sizeof s_mm.gameId, gameId, MM_NAME_MAX - 1);
+    } else if (World_Current() == WORLD_9697) {
+        copy_str(s_mm.gameId, sizeof s_mm.gameId, MM_GAME_ID_DEFAULT, MM_NAME_MAX - 1);
+    } else {
+        /* Another football world plays only its own: OPENSWOS/<n>-<world>, which the
+         * server's PlayKey (everything after the '/') keeps apart from 96/97's. */
+        char id[MM_NAME_MAX];
+        snprintf(id, sizeof id, "%s-%s", MM_GAME_ID_DEFAULT, World_Tag());
+        copy_str(s_mm.gameId, sizeof s_mm.gameId, id, MM_NAME_MAX - 1);
+    }
 
     if (enet_address_set_host(&addr, host && host[0] ? host : MM_DEFAULT_HOST) != 0) {
         s_mm.state = MM_FAILED;

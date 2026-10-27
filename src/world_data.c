@@ -21,6 +21,25 @@ static CompetitionLeague kWorld2627_italianLeague = {
     { _aSerieA, _aSerieA, _aSerieB, _aSerieB }
 };
 
+/* A country's range of global team numbers (base + ordinal, _teamsCountryNumbers) sized
+ * to the world's clubs: every later country's base moves by the difference. The league
+ * state table holds 2000; past it is a broken world, said so. */
+extern uint16_t _teamsCountryNumbers[256];
+extern volatile uint16_t _panicReasonCode;
+extern void PanicHaltLoop(void);
+
+static void resize_country(uint16_t country, uint16_t teams)
+{
+    const int16_t delta = (int16_t)(teams - (_teamsCountryNumbers[country + 1] -
+                                             _teamsCountryNumbers[country]));
+    for (uint16_t i = country + 1; i < 256; i++)
+        _teamsCountryNumbers[i] = (uint16_t)(_teamsCountryNumbers[i] + delta);
+    if (_teamsCountryNumbers[255] > 2000) {
+        _panicReasonCode = 0x8F02;
+        PanicHaltLoop();
+    }
+}
+
 static void install_league(CompetitionLeague *dst, const CompetitionLeague *src)
 {
     char *p0 = dst->playoffLinkPtrs[0], *p1 = dst->playoffLinkPtrs[1];
@@ -33,6 +52,7 @@ void World_InstallBaked(void)
 {
     switch (World_Current()) {
     case WORLD_2627:
+        resize_country(20, 256);
         install_league(&_italianLeague, &kWorld2627_italianLeague);
         break;
     default:

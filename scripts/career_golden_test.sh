@@ -120,11 +120,19 @@ done
 
 if [ "$UPDATE" = 1 ]; then
     [ "$fail" = 0 ] || { echo "not recorded: a career failed"; rm -f "$NOW"; exit "$fail"; }
+    # Only the careers played are replaced: the rest of the record stays.
+    KEEP=$(mktemp)
+    if [ -f "$RECORD" ]; then
+        grep -v '^#' "$RECORD" | awk -v played="$(printf '%s ' "${CAREERS[@]}")" \
+            'BEGIN { n = split(played, p, " "); for (i = 1; i <= n; i++) skip[p[i]] = 1 }
+             !($1 in skip)' > "$KEEP"
+    fi
     {
         echo "# The golden career test (scripts/career_golden_test.sh): <career> <save> <sha1>,"
         echo "# played by bin/SWOS.x86_64 for $SEASONS season(s). --update rewrites it."
-        sort "$NOW"
+        sort "$NOW" "$KEEP"
     } > "$RECORD"
+    rm -f "$KEEP"
     echo "recorded $(wc -l < "$NOW") saves of ${#CAREERS[@]} career(s) -> $RECORD"
     rm -f "$NOW"
     exit 0

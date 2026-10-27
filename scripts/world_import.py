@@ -144,7 +144,9 @@ def team(entry, country, ordinal, global_number, league, home_nation):
 
 
 def italy():
-    """Italy in 96/97's 51 slots: Serie A, Serie B, then 11 Serie C clubs outside the league."""
+    """Italy whole: Serie A (league 0), Serie B (league 1), then Serie C and D -- outside the
+    league (league 4) until a league can have their divisions (phase 4). 256 clubs: the
+    country's range of global numbers grows to them (world_data.c, resize_country)."""
     base = json.load(open(os.path.join(BASE, "teams", "ITALY.json"), encoding="utf-8"))
     mod = json.load(open(os.path.join(MOD, "teams", "ITA.json"), encoding="utf-8"))
     slots = base["teams"]
@@ -158,10 +160,10 @@ def italy():
     if len(serie_a) != 20 or len(serie_b) != 20 or len(serie_c) < 20:
         sys.exit("Italy: expected Serie A 20, Serie B 20, a Serie C group, got %d %d %d"
                  % (len(serie_a), len(serie_b), len(serie_c)))
-    others = len(slots) - 40
-    picked = [(e, 0) for e in serie_a] + [(e, 1) for e in serie_b] + [(e, 4) for e in serie_c[:others]]
-    teams = [team(e, country, i, slots[i]["team"]["global_team_number"], league, home)
-             for i, (e, league) in enumerate(picked)]
+    lower = [e for d in sorted(k for k in by_div if k not in (None, 0, 1)) for e in by_div[d]]
+    picked = [(e, 0) for e in serie_a] + [(e, 1) for e in serie_b] + [(e, 4) for e in lower]
+    first = slots[0]["team"]["global_team_number"]   # recomputed at load (SetTeamGlobalNumbers)
+    teams = [team(e, country, i, first + i, league, home) for i, (e, league) in enumerate(picked)]
     out = copy.copy(base)
     out["teams"], out["count"] = teams, len(teams)
     return out
@@ -182,6 +184,8 @@ def team_file_binary(teams):
     return tf.dict_filename(teams), tf.rnc_pack(tf.dict_to_blob(teams), tf.dict_rnc_method(teams))
 
 
+GLOBAL_TEAM_NUMBERS = 2000      # the league state table they index (career_diy_league_state.c)
+
 WORLD_DATA_C = """/*
  * world_data.c -- the worlds' baked competition records (include/world.h).
  *
@@ -197,6 +201,25 @@ WORLD_DATA_C = """/*
 %(externs)s
 
 %(records)s
+
+/* A country's range of global team numbers (base + ordinal, _teamsCountryNumbers) sized
+ * to the world's clubs: every later country's base moves by the difference. The league
+ * state table holds 2000; past it is a broken world, said so. */
+extern uint16_t _teamsCountryNumbers[256];
+extern volatile uint16_t _panicReasonCode;
+extern void PanicHaltLoop(void);
+
+static void resize_country(uint16_t country, uint16_t teams)
+{
+    const int16_t delta = (int16_t)(teams - (_teamsCountryNumbers[country + 1] -
+                                             _teamsCountryNumbers[country]));
+    for (uint16_t i = country + 1; i < 256; i++)
+        _teamsCountryNumbers[i] = (uint16_t)(_teamsCountryNumbers[i] + delta);
+    if (_teamsCountryNumbers[255] > %(globals)d) {
+        _panicReasonCode = 0x8F02;
+        PanicHaltLoop();
+    }
+}
 
 static void install_league(CompetitionLeague *dst, const CompetitionLeague *src)
 {
@@ -217,8 +240,10 @@ void World_InstallBaked(void)
 """
 
 
-def world_data_c(tag, leagues):
+def world_data_c(tag, leagues, resized):
     externs, records, installs = set(), [], []
+    for country, n in resized:
+        installs.append("        resize_country(%d, %d);" % (country, n))
     for rec in leagues["leagues"]:
         baked = dict(rec, id="kWorld%s%s" % (tag, rec["id"]))
         records.append("static " + emit_competitions.emit_league(baked))
@@ -227,7 +252,8 @@ def world_data_c(tag, leagues):
         installs.append("        install_league(&%s, &%s);" % (rec["id"], baked["id"]))
     cases = "    case WORLD_%s:\n%s\n        break;" % (tag, "\n".join(installs))
     return WORLD_DATA_C % {"externs": "\n".join(sorted(externs)),
-                           "records": "\n\n".join(records), "cases": cases}
+                           "records": "\n\n".join(records), "cases": cases,
+                           "globals": GLOBAL_TEAM_NUMBERS}
 
 
 def write(path, data):
@@ -250,7 +276,8 @@ def main():
     open(path, "wb").write(packed)
     print("wrote", os.path.relpath(path, REPO), "(%d bytes)" % len(packed))
     with open(os.path.join(REPO, "src", "world_data.c"), "w") as f:
-        f.write(world_data_c("2627", leagues))
+        f.write(world_data_c("2627", leagues, [(teams["teams"][0]["team"]["country_number"],
+                                                 teams["count"])]))
     print("wrote src/world_data.c")
     for what, n in sorted(counts.items()):
         print("  %-52s %d" % (what, n))

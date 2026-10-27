@@ -467,6 +467,84 @@ static void gp_season(const u8 *s)
 
 static int32_t sign(int32_t x) { return x < 0 ? -1 : x > 0; }
 
+static s8 s_want[GD][GT];               /* each club's move, a level: -1 up, 1 down */
+
+/* ---- B teams (the Mod's sec_post, gplay.c): in level terms ---- */
+
+static int32_t level_of(const LeagueGroups *lg, int32_t d)
+{
+    if (!lg)
+        return d;
+    for (int32_t l = lg->levels - 1; l >= 0; l--)
+        if (d >= lg->level[l].first)
+            return l;
+    return 0;
+}
+
+static int32_t find_club(u16 g, int32_t *d, int32_t *k)
+{
+    for (*d = 0; *d < s_in.nd; (*d)++)
+        for (*k = 0; *k < s_in.n[*d]; (*k)++)
+            if (s_in.t[*d][*k].glob == g)
+                return 1;
+    return 0;
+}
+
+/* B team at division db: going up one level is not allowed -- above `top`, or into or
+ * above its first team's level after this season's moves */
+static int32_t up_bad(const LeaguePlayoffs *lp, const LeagueGroups *lg, int32_t i, int32_t db, u16 base)
+{
+    const int32_t target = level_of(lg, db) - 1;
+    int32_t df, kf;
+    if (lp->secondTop != 0xFF && target < lp->secondTop)
+        return 1;
+    return lp->second[i][1] != 0xFF && find_club((u16)(base + lp->second[i][1]), &df, &kf) &&
+           target <= level_of(lg, df) + s_want[df][kf];
+}
+
+/* a club skipped for a promotion place: a B team that may not go up */
+static int32_t ineligible(const LeaguePlayoffs *lp, const LeagueGroups *lg, int32_t d, int32_t k, u16 base)
+{
+    for (int32_t i = 0; i < lp->seconds; i++)
+        if (s_in.t[d][k].glob == (u16)(base + lp->second[i][0]))
+            return !(lp->secondFlags & 1) || up_bad(lp, lg, i, d, base);
+    return 0;
+}
+
+static void second_teams(const LeaguePlayoffs *lp, const LeagueGroups *lg, u16 base)
+{
+    const int32_t lowestLevel = lg ? lg->levels - 1 : lp->divisions - 1;
+    for (int32_t i = 0; i < lp->seconds; i++) {
+        const u16 gb = (u16)(base + lp->second[i][0]);
+        int32_t db, kb, df = 0, kf = 0;
+        if (!find_club(gb, &db, &kb))
+            continue;
+        const int32_t lb = level_of(lg, db), nb = lb + s_want[db][kb], dl = s_want[db][kb];
+        const int32_t rf = lp->second[i][1] != 0xFF && find_club((u16)(base + lp->second[i][1]), &df, &kf);
+        const int32_t nf = rf ? level_of(lg, df) + s_want[df][kf] : -1;
+        const int32_t lowest = lb == lowestLevel;
+        const int32_t coupled = rf && nf >= (nb < lb ? lb : nb) && nb <= lb;
+        if (coupled && (!lowest || (lp->secondFlags & 2))) {
+            s_want[db][kb] = 1;                 /* the first team in its level: one down */
+            SWOS_DBG("[playoffs] B team (global %u) down: its first team in its level\n", (unsigned)gb);
+            if (!lowest)                        /* the best placed relegated of its division stays */
+                for (int32_t k = 0; k < s_in.n[db]; k++)
+                    if (k != kb && s_want[db][k] > 0) { s_want[db][k] = 0; break; }
+        } else if (nb < lb && (coupled || up_bad(lp, lg, i, db, base))) {
+            s_want[db][kb] = 0;                 /* up, not allowed: held */
+            SWOS_DBG("[playoffs] B team (global %u) held: may not go up\n", (unsigned)gb);
+        } else
+            continue;
+        if (nb < lb)                            /* its promotion: the next club of its division */
+            for (int32_t k = 0; k < s_in.n[db]; k++) {
+                if (k == kb || s_want[db][k] != 0 || ineligible(lp, lg, db, k, base))
+                    continue;
+                s_want[db][k] = (s8)dl;
+                break;
+            }
+    }
+}
+
 void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratch)
 {
     int32_t count = 0;
@@ -501,15 +579,10 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
     s_dp_moves = s_nmv;
     gp_season(lp->spec);
 
-    /* Each club's move as the Mod makes it: its record's by place, the play-offs' on top;
-     * a club whose move differs from the season's (scratch) gets the Mod's, one level. */
+    /* Each club's move as the Mod makes it: its record's by place, the play-offs' on top. */
     const LeagueGroups *lg = LeagueGroups_ForCountry(country);
     const int32_t lowest = lg ? lg->level[lg->levels - 1].first : lp->divisions - 1;
     const u16 base = _teamsCountryNumbers[country], manager = (u16)_careerTeam.team.globalTeamNumber;
-    u8 out[TEAM_POOL_SLOTS / 8];
-    int32_t career = 0x7FFF;
-    for (int32_t i = 0; i < TEAM_POOL_SLOTS / 8; i++)
-        out[i] = 0;
     for (int32_t d = 0; d < lp->divisions; d++) {
         const int32_t n = s_in.n[d];
         for (int32_t k = 0; k < n; k++) {
@@ -526,10 +599,23 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
                              (int)k + 1, (unsigned)g, s_mv[i].delta < 0 ? "up" : "down",
                              i < s_dp_moves ? "the Italian rules" : "a knockout");
                 }
-            want = sign(want);
+            s_want[d][k] = (s8)sign(want);
+        }
+    }
+    second_teams(lp, lg, base);
+
+    /* A club whose move differs from the season's (scratch) gets the Mod's, one level; out
+     * of the lowest division, below the league is the pool: the slot stays and takes the
+     * next club of it (team_pool.c), never the manager's. */
+    u8 out[TEAM_POOL_SLOTS / 8];
+    int32_t career = 0x7FFF;
+    for (int32_t i = 0; i < TEAM_POOL_SLOTS / 8; i++)
+        out[i] = 0;
+    for (int32_t d = 0; d < lp->divisions; d++)
+        for (int32_t k = 0; k < s_in.n[d]; k++) {
+            const u16 g = s_in.t[d][k].glob;
+            int32_t want = s_want[d][k];
             if (want > 0 && d >= lowest) {
-                /* Out of the lowest division: below the league is the pool -- the slot stays
-                 * and takes the next club of it (team_pool.c), never the manager's. */
                 if (g != manager && g >= base && g - base < TEAM_POOL_SLOTS)
                     out[(g - base) >> 3] |= (u8)(1 << ((g - base) & 7));
                 want = 0;
@@ -539,7 +625,6 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
             if (g == manager)
                 career = want;
         }
-    }
     for (int32_t o = 0; o < TEAM_POOL_SLOTS; o++)      /* (the slots in their order, as the Mod's) */
         if (out[o >> 3] & (1 << (o & 7))) {
             const int32_t in = TeamPool_Swap((u8)country, (u8)o);

@@ -10,6 +10,7 @@
 # tables for Italy 2026-27's 14 divisions, season after season, and compares every move.
 # The Mod's side walks the pack's whole knockout spec (its compile_spec, every kind); ours
 # the part world_import.py compiles (promotion, play-out) -- the rest must not change them.
+# Then the B-team rules (its sec_post): built cases, and random ones against the Mod's.
 # Needs the world's data (bin/data_json/worlds/2627/mod/, not in git): skipped without it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -50,5 +51,19 @@ if cmp -s "$OUT/mod.txt" "$OUT/ours.txt"; then
 else
     echo "FAIL: the first season that differs (Mod, then ours):"
     diff "$OUT/mod.txt" "$OUT/ours.txt" | head -4
+    exit 1
+fi
+
+# The B-team rules (the Mod's sec_post): built cases, then random ones against the Mod's.
+$CC -DGPLAY_C="\"$MOD/tools/gplay.c\"" -o "$OUT/mod_sec" $T/mod_sec.c
+$CC -Iinclude -include include/swos_platform.h -DSWOS_SDL_BUILD -o "$OUT/seconds" $T/seconds.c
+"$OUT/seconds" 2>/dev/null
+"$OUT/mod_sec" "$N" > "$OUT/mod_sec.txt"
+"$OUT/seconds" random "$N" > "$OUT/sec.txt" 2> "$OUT/sec.log"
+if cmp -s "$OUT/mod_sec.txt" "$OUT/sec.txt"; then
+    echo "PASS: B teams, $N cases ($(grep -o '^[0-9]* of' "$OUT/sec.log" | cut -d' ' -f1) changed by the rules), every move the Mod's"
+else
+    echo "FAIL: B teams, the first case that differs (Mod, then ours):"
+    diff "$OUT/mod_sec.txt" "$OUT/sec.txt" | head -4
     exit 1
 fi

@@ -307,7 +307,10 @@ def compile_playoff(po, ndiv):
             b"".join(bytes(e) for e in ents) + rounds)
 
 
-def italian_playoffs(country, league):
+SECOND_RULES = {"ita": (1, 1)}   # the Mod's mkseason.SECOND_RULES: B teams up to Serie B, play-offs too
+
+
+def italian_playoffs(country, league, picked=None):
     """Italy's play-off rules: the Mod's counts per division, its Italian rules (dplay.c:
     Serie B's play-off and play-out, Serie C's play-off) and the pack's knockouts played
     at the season end (its groups' play-outs; Serie D's go to the pool below, not yet)."""
@@ -317,7 +320,19 @@ def italian_playoffs(country, league):
                     if po["kind"] in KINDS) + b"\0"
     counts["play-offs compiled (promotion / play-out)"] += sum(
         1 for po in mod.get("ko_playoffs", []) if po["kind"] in KINDS)
+    seconds, top, flags = [], 0xFF, 0
+    rules = (mod.get("second_teams") or {}).get("rules")
+    if rules in SECOND_RULES and picked:
+        top, po = SECOND_RULES[rules]
+        flags = po | (2 if (mod.get("reserve") or {}).get("off_file") else 0)
+        ordinal = {e.get("x_swos9697", {}).get("club_id"): o for o, (e, _) in enumerate(picked)}
+        for o, (e, _) in enumerate(picked):
+            first = e.get("x_swos9697", {}).get("second_of")
+            if first:
+                seconds.append((o, ordinal.get(first, 0xFF)))
+        counts["B teams"] += len(seconds)
     return {"name": "Italy", "country": country, "divisions": ndiv,
+            "seconds": seconds, "secondTop": top, "secondFlags": flags,
             "promoted": [d["promoted"] for d in mod["divisions"]],
             "relegated": [d["relegated"] for d in mod["divisions"]],
             "italy": mod.get("playoffs") == "ita", "serieB": 1, "groupFirst": 2,
@@ -489,9 +504,12 @@ def world_data_c(tag, leagues, resized, groups, playoffs, pools):
         spec = po["spec"]
         po_tables.append("static const uint8_t %sSpec[%d] = {\n%s\n};" % (sym, len(spec), "\n".join(
             "    " + ", ".join("0x%02X" % b for b in spec[i:i + 16]) + "," for i in range(0, len(spec), 16))))
-        po_entries.append("    { %d, %d, %sPromoted, %sRelegated, %d, %d, %d, %d, %sSpec },   /* %s */" % (
+        po_tables.append("static const uint8_t %sSeconds[][2] = {\n%s\n};" % (sym, "\n".join(
+            "    { %d, %d }," % (b, f) for b, f in po["seconds"]) or "    { 0, 0 },"))
+        po_entries.append("    { %d, %d, %sPromoted, %sRelegated, %d, %d, %d, %d, %sSpec, %d, %sSeconds, %d, %d },"
+                          "   /* %s */" % (
             po["country"], po["divisions"], sym, sym, int(po["italy"]), po["serieB"], po["groupFirst"],
-            po["groups"], sym, po["name"]))
+            po["groups"], sym, len(po["seconds"]), sym, po["secondTop"], po["secondFlags"], po["name"]))
     po_tables.append("static const LeaguePlayoffs kWorld%sPlayoffs[] = {\n%s\n};" % (tag, "\n".join(po_entries)))
     po_cases = ("    case WORLD_%s:\n        *count = %d;\n        return kWorld%sPlayoffs;"
                 % (tag, len(playoffs), tag))
@@ -543,7 +561,7 @@ def main():
     with open(os.path.join(REPO, "src", "world_data.c"), "w") as f:
         f.write(world_data_c("2627", leagues, [(country, teams["count"])],
                              [italian_groups(picked, country, leagues)],
-                             [italian_playoffs(country, leagues)], [pool_info]))
+                             [italian_playoffs(country, leagues, picked)], [pool_info]))
     print("wrote src/world_data.c")
     for what, n in sorted(counts.items()):
         print("  %-52s %d" % (what, n))

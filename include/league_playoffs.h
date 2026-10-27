@@ -28,6 +28,10 @@ typedef struct {
     uint8_t        italy;       /* the Italian rules (dplay.c): Serie B and its groups */
     uint8_t        serieB, groupFirst, groups;
     const uint8_t *spec;        /* the generic ones (gplay.c's compiled bytes), 0-ended */
+    uint8_t        seconds;     /* B teams: (its ordinal, its first team's or 0xFF) in the */
+    const uint8_t (*second)[2]; /* team file; the highest level one may reach (0xFF any), */
+    uint8_t        secondTop;   /* flags: 1 play-offs allowed, 2 it may leave the league */
+    uint8_t        secondFlags; /* from the lowest division (the pool) */
 } LeaguePlayoffs;
 
 const LeaguePlayoffs *World_LeaguePlayoffs(int32_t *count);

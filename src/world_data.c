@@ -411,8 +411,14 @@ static const uint8_t kWorld2627_italySpec[385] = {
     0x00,
 };
 
+static const uint8_t kWorld2627_italySeconds[][2] = {
+    { 44, 5 },
+    { 67, 6 },
+    { 89, 0 },
+};
+
 static const LeaguePlayoffs kWorld2627Playoffs[] = {
-    { 20, 14, kWorld2627_italyPromoted, kWorld2627_italyRelegated, 1, 1, 2, 3, kWorld2627_italySpec },   /* Italy */
+    { 20, 14, kWorld2627_italyPromoted, kWorld2627_italyRelegated, 1, 1, 2, 3, kWorld2627_italySpec, 3, kWorld2627_italySeconds, 1, 3 },   /* Italy */
 };
 
 const LeaguePlayoffs *World_LeaguePlayoffs(int32_t *count)

@@ -689,8 +689,9 @@ retry:
     /* Pick a random team from selected teams */
     rand = Rand2();
     teamIdx = (uint16_t)(((uint32_t)rand * _numSelectedTeams) >> 8);  /* mulu+lsr */
-    teamIdx = (uint16_t)((uint32_t)teamIdx * sizeof(TeamFileEx));
-    teamEntry = &_selTeamsPtr + teamIdx;
+    /* mulu.w #684 gives a 32-bit offset (adda.l): kept as 32 bits. In 16 it wrapped for
+     * team 96 on (96 * 684 = 65664) and picked the wrong team. */
+    teamEntry = &_selTeamsPtr + (uint32_t)teamIdx * sizeof(TeamFileEx);
 
     /* Must be same country but different team. teamEntry points at
      * a TeamFile so byte[0]=country, byte[1]=ordinal. Read teamNum

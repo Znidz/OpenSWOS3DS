@@ -53,7 +53,7 @@
 #include "teams.h"          /* LoadTeamFile */
 #include "game_loop.h"      /* _gFrameStepInput */
 
-extern TeamFileEx _selectedTeams[100];
+extern TeamFileEx _selectedTeams[SELECTED_TEAMS_MAX];
 extern uint8_t    _teamFileBuffer[];
 extern uint8_t    _teamTacticsUSERB[], _teamTacticsUSERC[];
 extern uint16_t   _gameLength, _friendlyPitchType, _minSubstitutes, _maxSubstitutes;

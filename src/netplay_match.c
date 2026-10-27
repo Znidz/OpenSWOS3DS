@@ -1015,7 +1015,7 @@ static void team_name(char *out, size_t cap, const TeamFileEx *t)
 
 static void recordBegin(int32_t localPlayer, int32_t delay, int32_t simWidth)
 {
-    extern TeamFileEx _selectedTeams[100];
+    extern TeamFileEx _selectedTeams[SELECTED_TEAMS_MAX];
     const LobbyPlayer *me = NetplayLobby_Player(localPlayer);
     const LobbyPlayer *them = NetplayLobby_Player(3 - localPlayer);
     char team1[20], team2[20];

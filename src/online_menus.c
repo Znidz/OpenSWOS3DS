@@ -1355,7 +1355,7 @@ enum { kLineupControls = 2 };           /* TEAM_PLAYER_COACH: what the lobby pla
 /* The two sides where the team screen looks for them; the lobby's own state kept. */
 static void lineup_begin(void)
 {
-    extern TeamFileEx _selectedTeams[100];
+    extern TeamFileEx _selectedTeams[SELECTED_TEAMS_MAX];
     extern uint16_t   _numSelectedTeams, _currentTeamNumber, _selTeamNumber;
     extern uint16_t   _gameType, _isCareer, _trainingGame, _twoPlayers;
     extern uint16_t   _team1SelectedPlayerIndex, _team2SelectedPlayerIndex;
@@ -1436,7 +1436,7 @@ static void lineup_log(const TeamFileEx *before, const TeamFileEx *after)
  * sent to the other player. */
 static void lineup_end(void)
 {
-    extern TeamFileEx _selectedTeams[100];
+    extern TeamFileEx _selectedTeams[SELECTED_TEAMS_MAX];
     extern uint16_t   _numSelectedTeams, _currentTeamNumber, _selTeamNumber;
     extern uint16_t   _gameType, _isCareer, _trainingGame, _twoPlayers;
     extern uint16_t   _team1SelectedPlayerIndex, _team2SelectedPlayerIndex;
@@ -1477,7 +1477,7 @@ static void lineup_screen(void)
                                      int16_t isFirstPlayer, int16_t squadChanges,
                                      TeamFileEx *team1, TeamFileEx *team2);
     extern const char *g_playMatchStartLabel;
-    extern TeamFileEx _selectedTeams[100];
+    extern TeamFileEx _selectedTeams[SELECTED_TEAMS_MAX];
     extern uint16_t   _exitGameFlag;
     static char confirm[] = "CONFIRM";
     int32_t confirmed;
@@ -1513,7 +1513,7 @@ static void mpGameSetup_tactics_onSelect(void)
  * screen: that the arranged team reaches the match on both machines. */
 static void lineup_test_swap(void)
 {
-    extern TeamFileEx _selectedTeams[100];
+    extern TeamFileEx _selectedTeams[SELECTED_TEAMS_MAX];
     extern void PlayMatchMenuSwapPlayers(TeamFileEx *team, int16_t d3, int16_t d4);
     const char *v = getenv("SWOS_LOBBY_LINEUP_SWAP");
     int a, b;
@@ -1758,7 +1758,7 @@ static void rate_match(const char *opponent, int32_t outcome, const char *why)
  * does for the friendly menu and for arcade mode. */
 static void run_live_match(void)
 {
-    extern TeamFileEx  _selectedTeams[100];
+    extern TeamFileEx  _selectedTeams[SELECTED_TEAMS_MAX];
     extern void        InitAndPlayGame(TeamFileEx *team1, TeamFileEx *team2);
 
     char ip[24];

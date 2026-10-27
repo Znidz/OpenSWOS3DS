@@ -805,7 +805,14 @@ void RotatePlayersLeft(TeamFileEx *team, uint16_t maxSubs)
 __attribute__((used, externally_visible, optimize("no-tree-loop-distribute-patterns")))
 TeamFileEx *AddTeamToBuffer(TeamFileEx *team)
 {
-    TeamFileEx *dest = _selectedTeams + _numSelectedTeams;
+    TeamFileEx *dest;
+    /* The original wrote the next record whatever the count: the 101st landed on what
+     * followed the cache. A full cache is a broken invariant -- say so. */
+    if (_numSelectedTeams >= SELECTED_TEAMS_MAX) {
+        _panicReasonCode = 0x8F01;
+        PanicHaltLoop();
+    }
+    dest = _selectedTeams + _numSelectedTeams;
     uint16_t *src16 = (uint16_t *)team;
     uint16_t *dst16 = (uint16_t *)dest;
     uint16_t i;

@@ -670,7 +670,12 @@ typedef char _teamfileex_size_check[(sizeof(TeamFileEx) == 684) ? 1 : -1];
  * over the historical `(TeamFileEx *)&selTeamsPtr` cast (STRUCT_CONSOLIDATE /
  * SELECTED_TEAMS_UNTANGLE phase 3). The raw `(uint8_t*)&selTeamsPtr + offset`
  * identity-resolve sites stay as-is (teamSelOffset is a byte-offset identity). */
-extern TeamFileEx _selectedTeams[100];
+/* The team cache: the career's (or competition's) teams in play. The original held 100;
+ * a big world needs more (the SWOS 96/97 Mod's World 2026-27 raised it to 160,
+ * docs/WORLD_2026_27.md phase 2). AddTeamToBuffer panics (0x8F01) rather than write a
+ * team past the end. */
+#define SELECTED_TEAMS_MAX 160
+extern TeamFileEx _selectedTeams[SELECTED_TEAMS_MAX];
 
 /* The historical sub-labels of the selected-teams overlay, now pure-C offset
  * macros into the one backing symbol (was asm .skip labels in selected_teams.c;

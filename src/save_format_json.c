@@ -6216,7 +6216,7 @@ static void apply_semantic_load(const char *src, int src_size)
                    &teams_arr, &teams_arr_len) == MJSON_TOK_ARRAY) {
         int pos = 0, voff, vlen, vt;
         uint16_t i = 0;
-        while (i < _numSelectedTeams &&
+        while (i < _numSelectedTeams && i < SELECTED_TEAMS_MAX &&
                (pos = fast_array_next(teams_arr, teams_arr_len, pos,
                                       &voff, &vlen, &vt)) != 0) {
             if (vt != MJSON_TOK_OBJECT) { i++; continue; }

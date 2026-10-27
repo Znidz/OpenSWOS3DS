@@ -58,7 +58,7 @@
 #ifdef SWOS_NETPLAY
 
 /* ---- the globals a match is started from ---- */
-extern TeamFileEx _selectedTeams[100];
+extern TeamFileEx _selectedTeams[SELECTED_TEAMS_MAX];
 extern uint16_t   _numSelectedTeams;
 
 extern uint8_t _teamTacticsUSERA[], _teamTacticsUSERB[], _teamTacticsUSERC[];

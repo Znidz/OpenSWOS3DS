@@ -49,7 +49,7 @@
 #include "team_proto.h"
 #include "teams.h"
 
-extern TeamFileEx  _selectedTeams[100];
+extern TeamFileEx  _selectedTeams[SELECTED_TEAMS_MAX];
 extern TeamFileEx *_selectedTeamPtr;
 extern uint16_t    _selectedTeamCountryNumber;
 extern uint16_t    _numSelectedTeams, _currentTeamNumber, _selTeamNumber;

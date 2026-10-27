@@ -42,7 +42,7 @@
 #include "game_loop.h"          /* _gFrameStepInput */
 #include "dos_mode.h"           /* _gDosView: the view it was replayed with */
 
-extern TeamFileEx _selectedTeams[100];
+extern TeamFileEx _selectedTeams[SELECTED_TEAMS_MAX];
 extern uint16_t   _numSelectedTeams;
 extern uint16_t   _menuBGImageCmdStream[];
 extern uint8_t   *_menuImageStreamBaseEnd;

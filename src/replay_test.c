@@ -146,7 +146,7 @@ static struct {
  * Globals the rig drives
  * =================================================================== */
 
-extern TeamFileEx        _selectedTeams[100];
+extern TeamFileEx        _selectedTeams[SELECTED_TEAMS_MAX];
 extern uint16_t          _numSelectedTeams;
 extern TeamGame          _topTeamInGame, _bottomTeamInGame;
 extern TeamGeneralInfo   _topTeamData, _bottomTeamData;

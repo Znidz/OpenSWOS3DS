@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "tables.h"
-void mod_dp(const unsigned short (*rows)[32][6], const int *n, FILE *out);
+void mod_dp(const unsigned short (*rows)[32][6], const int *n, unsigned short cupw, FILE *out);
 void mod_gp(const unsigned short (*rows)[32][6], const int *n, int nd, const unsigned char *sp, FILE *out);
 int main(int argc, char **argv)
 {
@@ -16,7 +16,7 @@ int main(int argc, char **argv)
             rows[d][k][3] = t[d][k].gf; rows[d][k][4] = t[d][k].ga; rows[d][k][5] = t[d][k].pts;
         }
         printf("%u", it);
-        mod_dp((const unsigned short (*)[32][6])rows, n, stdout);
+        mod_dp((const unsigned short (*)[32][6])rows, n, cup_winner(it, t, n), stdout);
         mod_gp((const unsigned short (*)[32][6])rows, n, 14, spec, stdout);
         printf("\n");
     }

@@ -8,6 +8,7 @@
 #include "audio.h"
 #include "menus.h"
 #include "world.h"           /* the football world, before the competition tables */
+#include "world_cups.h"      /* its cups into the country tables */
 #include "display.h"
 #include <string.h>   /* memcpy/memset — used by both the SDL decode and the Amiga overlay re-stride */
 
@@ -115,11 +116,15 @@ void FrontEndPreLoopSetup(void)
     World_ReadFromData();
 #endif
     World_InstallBaked();
+#ifndef SWOS_SDL_BUILD
+    WorldCups_Install();        /* its cups into the country tables (the SDL: after the JSON's) */
+#endif
 #ifdef SWOS_SDL_BUILD
     /* SWOS_DATA_JSON: rebuild normal-country competition tables from data_json/
        before any menu reads competitionsTable[]. No-op unless the env var is set. */
     extern void DataJson_InstallCompetitionGraph(void);
     DataJson_InstallCompetitionGraph();
+    WorldCups_Install();
     /* career_params.json: override the compiled career-mode balance knobs (starting
        balance, gate receipts, wages, board expectations) so testers can tune them
        without a rebuild. Absent file -> compiled defaults. */

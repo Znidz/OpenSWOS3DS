@@ -12,6 +12,7 @@
 
 #include "career_teams.h"
 #include "world_playoff.h"
+#include "world_cups.h"
 #include "translations.h"
 #include "endian_helpers.h"
 #include "game_types.h"
@@ -1205,7 +1206,10 @@ void Career_InitCompetitionTeamSelectionFromTableHeaderSpec(uint8_t *spec)
         uint16_t idsOff = teamIdsOffset + 2u * (sizeof(char *) - sizeof(uint32_t));
         uint16_t count = spec[10];  /* andi.w #$FF,d7 — unsigned byte */
         uint16_t *teamIds = (uint16_t *)(spec + 7 + idsOff);
+        /* a world cup with byes lists fewer clubs than its bracket (world_cups.c) */
+        count = WorldCups_Entrants(spec, count);
         AppendTeamsToSelectionFromTmdOrTeamFile(_diyCompetitionStart.cupTeamIds, teamIds, count);
+        WorldCups_Padded(spec);
     } else {
         uint16_t extNumber = spec[2];
         int16_t teamCount = (int16_t)(int8_t)spec[10];  /* ext.w d1 — signed */
@@ -2846,7 +2850,10 @@ static uint8_t *addNextRoundCupEntry(uint8_t **srcPtr, uint16_t idx, uint16_t to
     (*srcPtr)++;
 
     /* GetNextCupRoundStringIndex(idx, total, subRoundCounter) */
-    uint16_t cupRoundIdx = GetNextCupRoundStringIndex(idx, total, ((DIYCompetition *)base)->subRoundCounter);
+    /* (a world cup's own names: world_cups.c) */
+    const int32_t world = WorldCups_RoundStringIndex((uint8_t)((DIYCompetition *)base)->field_2E, idx, total);
+    uint16_t cupRoundIdx = world >= 0 ? (uint16_t)world :
+                           GetNextCupRoundStringIndex(idx, total, ((DIYCompetition *)base)->subRoundCounter);
     e->cupRoundStringIdx = (uint8_t)cupRoundIdx;
     e->roundIdx          = (uint8_t)idx;
     e->compSlot            = (uint8_t)teamId;

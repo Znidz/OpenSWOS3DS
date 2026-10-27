@@ -16,6 +16,7 @@
 #include "game_types.h"
 #include "fixture_rounds.h"
 #include "world_playoff.h"
+#include "world_cups.h"
 #include "string_utils.h"
 #include "random.h"
 #include "deterministic.h"
@@ -974,7 +975,8 @@ const char *GetNextCupRoundString(uint16_t cur, uint16_t n, uint16_t add)
     const char *own = WorldPlayoff_RoundName(cur, n);   /* (a world's play-off: world_playoff.c) */
     if (own)
         return own;
-    uint16_t idx = GetNextCupRoundStringIndex(cur, n, add);
+    const int32_t world = WorldCups_RoundStringIndex((uint8_t)_diyCompetitionStart.base.field_2E, cur, n);
+    uint16_t idx = world >= 0 ? (uint16_t)world : GetNextCupRoundStringIndex(cur, n, add);
     return (const char *)_cupRoundStringTable[idx];
 }
 
@@ -2805,6 +2807,7 @@ void DIY_UpdateCompetitionProgress(void)
     DIY_ReorderTeamGridByOrderList();
     /* A world's play-off: the next round its rules' ties, not the draw (world_playoff.c). */
     WorldPlayoff_ArrangeNextRound();
+    WorldCups_ArrangeNextRound();   /* a world cup's first season: the real bracket (world_cups.c) */
 
     {
         uint8_t *grid = comp->teamGridPairings;
@@ -9303,6 +9306,7 @@ void InitDIYCupFromRecord(uint8_t *cupRec)
     /* Competition.seedReorderFlag == 0 → shuffle. */
     if (compHdr->seedReorderFlag == 0)
         DIY_ShuffleTeamGridPairs();
+    WorldCups_CupMade(cupRec);   /* a world cup: its byes, a later season's draw (world_cups.c) */
 }
 
 __attribute__((used, externally_visible))
@@ -10588,9 +10592,14 @@ setDecisive:
     d7 |= 0x82;
     /* (a two-legged tie is decided by its return leg, not its first) */
     if (compEx->matchData.cup.roundFormat != 2 || compEx->matchData.cup.competitionFormat != 0)
+    {
         WorldPlayoff_TieDecided(PACK_BE_U16(team1->team.countryNumber, team1->team.teamOrdinal),
                                 PACK_BE_U16(team2->team.countryNumber, team2->team.teamOrdinal),
                                 d7 & 1);
+        WorldCups_TieDecided(PACK_BE_U16(team1->team.countryNumber, team1->team.teamOrdinal),
+                             PACK_BE_U16(team2->team.countryNumber, team2->team.teamOrdinal),
+                             d7 & 1);
+    }
 
 careerUpdate:
     updateCareerAfterResult(team1, team2, d1, d2, d7);

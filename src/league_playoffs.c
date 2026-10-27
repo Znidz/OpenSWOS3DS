@@ -51,6 +51,7 @@
 #include "league_groups.h"
 #include "team_pool.h"
 #include "world_playoff.h"
+#include "world_cups.h"
 #include "game_types.h"
 #include "diy_competition.h"
 
@@ -138,6 +139,7 @@ static struct {
     u16 po_win, out_win;        /* the career club's play-off / play-out played (world_playoff.c):
                                    its winner's team number, 0: simulated */
     u16 cpo_win;                /* its Serie C play-off, the same */
+    u16 cupw;                   /* the Coppa Italia Serie C winner (world_cups.c), 0 unknown */
 } DP_IN;
 
 static u32 dp_rng;
@@ -256,11 +258,15 @@ static void serie_b(void)
     }
 }
 
-/* the Coppa Italia Serie C winner's play-off place: unknown in this world (no league
- * cups yet), so the Mod's stand-in, the best 11th of the groups */
+/* the Coppa Italia Serie C winner's play-off place: the winner itself when it finished 11th
+ * or lower, the 11th of its group when it is promoted or already in (2nd-10th); unknown:
+ * the best 11th of the groups */
 static int cup_place(int ng)
 {
     int e[4];
+    for (int g = 1; g <= ng && DP_IN.cupw; g++)
+        for (int k = 0; k < DP_IN.n[g]; k++)
+            if (DP_IN.t[g][k].team == DP_IN.cupw) return g * NT + (k >= 10 ? k : 10);
     for (int g = 0; g < ng; g++) e[g] = (g + 1) * NT + 10;
     return best_of(e, ng);
 }
@@ -598,6 +604,7 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
     if (lp->italy) {
         DP_IN.ng = lp->groups;
         DP_IN.po_win = DP_IN.out_win = DP_IN.cpo_win = 0;
+        DP_IN.cupw = WorldCups_LeagueCupWinner((uint8_t)country);
         if (g_worldPlayoff.kind == WORLD_PLAYOFF_C_PLAYOFF)
             DP_IN.cpo_win = g_worldPlayoff.winner;
         if (g_worldPlayoff.kind == WORLD_PLAYOFF_B_PLAYOUT)

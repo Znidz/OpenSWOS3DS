@@ -41,6 +41,7 @@ extern uint16_t _careerSeasonsCompleted;
 #include "league_groups.h"
 #include "team_pool.h"
 #include "world_playoff.h"
+#include "world_cups.h"
 extern uint16_t _currentSeasonShowing;
 extern uint16_t _seasonTransferQuota;
 extern uint16_t _pendingForeignPlayerCount;
@@ -256,8 +257,10 @@ void SelectTeamToManage(void);
 __attribute__((used, externally_visible))
 void ChooseTeamAndStartCareer(void)
 {
-    /* A new career: a world's pooled files as shipped (team_pool.c), also in the picker. */
+    /* A new career: a world's pooled files as shipped (team_pool.c), also in the picker;
+     * its cups' first season (world_cups.c). */
     TeamPool_Reset();
+    WorldCups_Reset();
     _teamsLoaded = 0;
     SelectTeamToManage();
     if (_selectedTeamPtr == 0) {
@@ -643,6 +646,7 @@ void InitCareer(uint16_t teamNo)
             *p++ = 0;
     }
     TeamPool_Reset();
+    WorldCups_Reset();
 
     DIY_LoadLeagueScratchFromTable();
 
@@ -1272,12 +1276,15 @@ void InitializeNewSeason(void)
 
         uint8_t *comp = (uint8_t *)*compTablePtr;
         compTablePtr++;
-        Career_SetCurrentCompetitionSlot(comp, 1, 0, 0);
+        /* a world's cup only if the club is in it (world_cups.c) */
+        if (WorldCups_Plays(comp)) {
+            Career_SetCurrentCompetitionSlot(comp, 1, 0, 0);
 
-        /* secondaryCompStringOffset == competitionContextBuf+0x28 namePtr on
-         * Amiga (slot 1); read the buffer namePtr directly. */
-        ((SeasonInformations *)GetCurrentSeasonPointer())->strPtr1 =
-            ((DIYCompetition *)_careerCompetitionSlotPtrTable[1])->namePtr;
+            /* secondaryCompStringOffset == competitionContextBuf+0x28 namePtr on
+             * Amiga (slot 1); read the buffer namePtr directly. */
+            ((SeasonInformations *)GetCurrentSeasonPointer())->strPtr1 =
+                ((DIYCompetition *)_careerCompetitionSlotPtrTable[1])->namePtr;
+        }
 
         _competitionContextBuf.tourn.header.slotStateC = savedC;
         _competitionContextBuf.tourn.header.slotStateB = savedB;
@@ -1290,12 +1297,14 @@ void InitializeNewSeason(void)
             uint16_t savedC2 = _tertiaryCompetitionContextBuf.tourn.header.slotStateC;
 
             comp = (uint8_t *)*compTablePtr;
-            Career_SetCurrentCompetitionSlot(comp, 2, 0, 0);
+            if (WorldCups_Plays(comp)) {
+                Career_SetCurrentCompetitionSlot(comp, 2, 0, 0);
 
-            /* tertiaryCompStringOffset == tertiaryCompetitionContextBuf+0x28
-             * namePtr on Amiga (slot 2). */
-            ((SeasonInformations *)GetCurrentSeasonPointer())->strPtr2 =
-                ((DIYCompetition *)_careerCompetitionSlotPtrTable[2])->namePtr;
+                /* tertiaryCompStringOffset == tertiaryCompetitionContextBuf+0x28
+                 * namePtr on Amiga (slot 2). */
+                ((SeasonInformations *)GetCurrentSeasonPointer())->strPtr2 =
+                    ((DIYCompetition *)_careerCompetitionSlotPtrTable[2])->namePtr;
+            }
 
             _tertiaryCompetitionContextBuf.tourn.header.slotStateC = savedC2;
             _tertiaryCompetitionContextBuf.tourn.header.slotStateB = savedB2;
@@ -1464,16 +1473,19 @@ void InitNewSeason(uint8_t *src, uint16_t divisionIndex)
     /* Skip the per-primary divisionIndex slot (one pointer entry, -2 = "none"). */
     compTable++;
 
-    /* Slot 1: secondary competition (if present) */
+    /* Slot 1: secondary competition (if present) -- a world's cup only if the club is
+     * in it (world_cups.c) */
     if ((uintptr_t)*compTable != (uintptr_t)-1) {
         comp = (uint8_t *)*compTable;
         compTable++;
-        Career_SetCurrentCompetitionSlot(comp, 1, 0, 0);
+        if (WorldCups_Plays(comp))
+            Career_SetCurrentCompetitionSlot(comp, 1, 0, 0);
 
         /* Slot 2: tertiary competition (if present) */
         if ((uintptr_t)*compTable != (uintptr_t)-1) {
             comp = (uint8_t *)*compTable;
-            Career_SetCurrentCompetitionSlot(comp, 2, 0, 0);
+            if (WorldCups_Plays(comp))
+                Career_SetCurrentCompetitionSlot(comp, 2, 0, 0);
         }
     }
 
@@ -1648,6 +1660,10 @@ static void Rebuild_CompetitionSlotPointers(void)
         _secondaryCompetitionPtr = 0;
         _tertiaryCompetitionPtr = 0;
     }
+    if (!WorldCups_Plays(_secondaryCompetitionPtr))     /* (as InitNewSeason: world_cups.c) */
+        _secondaryCompetitionPtr = 0;
+    if (!WorldCups_Plays(_tertiaryCompetitionPtr))
+        _tertiaryCompetitionPtr = 0;
 
     /* Slot 4 (DIY) — derive from primary comp's DIY link. Mirrors
      * `DIY_SelectCompetitionSlot4FromCurrentDivision`. The diyEntry

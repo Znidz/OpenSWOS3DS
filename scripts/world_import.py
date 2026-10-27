@@ -16,11 +16,14 @@ teams in OpenSWOS team JSON, his packs) and writes what the game reads for that 
     src/world_data.c                                  the same records baked, for the Amiga
                                                         (and both targets at start-up:
                                                         World_InstallBaked) -- committed, it
-                                                        holds only league shapes
+                                                        holds only league shapes and the
+                                                        cups' brackets (team-file ordinals)
 
 The world so far is ONE country, Italy, whole: 256 clubs, its league Serie A, Serie B,
 Serie C's three groups side by side and Serie D's nine (phase 4: levels of groups,
-include/league_groups.h; Serie D's odd groups play real rounds, include/fixture_rounds.h). Every other country stays 96/97's (the overlay falls back to it).
+include/league_groups.h; Serie D's odd groups play real rounds, include/fixture_rounds.h), its
+Coppa Italia and Coppa Italia Serie C from the real draw (include/world_cups.h). Every other
+country stays 96/97's (the overlay falls back to it).
 
 What our engine cannot show yet is mapped, and counted on the way:
   - 16 players a team (the Mod's extra 14 are left out);
@@ -37,6 +40,7 @@ computes it. The data is not to be published yet: bin/data_json/worlds/ is ignor
 """
 import collections
 import copy
+import csv
 import hashlib
 import json
 import os
@@ -341,6 +345,103 @@ def italian_playoffs(country, league, picked=None):
             "groups": SERIE_C_GROUPS, "spec": spec}
 
 
+CUP_ROUND = {"single_et": 0x14, "two_legs": 0x94}   # legs 7-6 (2 two), e.t. 5-4, penalties 3-2
+LEAGUE_CUP_ID = 163         # a free competition id (include/comp_identity.h: 162..255)
+
+
+def bracket_order(rows, rounds):
+    """A cup's real draw (ties.csv: round, home, away; a bye has no away) as the engine plays
+    a fixed bracket: round 1's ties in an order where tie k of each later round is the
+    winners of ties 2k and 2k + 1 of the one before -- the tree from the final down, each
+    tie's two from the earlier round's ties holding its clubs. Round 1's real ties must come
+    first (the engine plays a round's first ties, the byes wait after them), so where a
+    tie's away side holds more of them its two sides are laid out the other way round and
+    the tie changes sides when played: a bit per tie of each later round (flips[r - 2]).
+    Returns (round 1's ties in order, the flips, the rounds the draw covers)."""
+    by_round = collections.defaultdict(list)
+    for r in rows:
+        by_round[int(r["round"])].append((r["home"], r["away"] or None))
+    last = max(by_round)
+    if len(by_round[last]) != 1 or sorted(by_round) != list(range(1, last + 1)):
+        sys.exit("a cup's draw: rounds 1..%d, one tie in the last (%s)" % (last, sorted(by_round)))
+
+    def holds(r, club):
+        """round r's tie a club played (or waited) in, by index."""
+        for i, t in enumerate(by_round[r]):
+            if club in t:
+                return i
+        sys.exit("a cup's draw: %s not in round %d" % (club, r))
+
+    level = collections.defaultdict(list)   # per round, its ties in the engine's order: (index, flipped)
+
+    def real(r, i):
+        """round r's tie i: how many real first-round ties lead to it."""
+        if r == 1:
+            return 1 if by_round[1][i][1] else 0
+        h, a = by_round[r][i]
+        return real(r - 1, holds(r - 1, h)) + real(r - 1, holds(r - 1, a))
+
+    def lay(r, i):
+        """round r's tie i laid out: its round-1 ties in order (each round's ties are met
+        left to right, so level[r] is in the engine's order)."""
+        if r == 1:
+            return [i]
+        h, a = by_round[r][i]
+        home, away = holds(r - 1, h), holds(r - 1, a)
+        flip = real(r - 1, away) > real(r - 1, home)
+        level[r].append(flip)
+        first, second = (away, home) if flip else (home, away)
+        return lay(r - 1, first) + lay(r - 1, second)
+
+    order, played = lay(last, 0), real(last, 0)
+    if sorted(order) != list(range(len(by_round[1]))):
+        sys.exit("a cup's draw: round 1's ties do not make one bracket")
+    if any(not by_round[1][i][1] for i in order[:played]):
+        sys.exit("a cup's draw: its real first-round ties cannot all come first")
+    flips = [sum(1 << k for k, f in enumerate(level[r]) if f) for r in range(2, last + 1)]
+    return [by_round[1][i] for i in order], flips, last
+
+
+def italian_cups(picked, country):
+    """Italy's cups as the Mod's pack has them (packs/ita: pack.json's cup and league_cup,
+    ties.csv): the Coppa Italia from its round of 16, the Coppa Italia Serie C from its
+    first round (one tie, the others' byes), each club list in the order of the real
+    bracket. Returns their records and the world's table of them (src/world_cups.c)."""
+    pack = json.load(open(os.path.join(MOD, "packs", "ita", "pack.json"), encoding="utf-8"))
+    names = {r["key"]: r["name"] for r in csv.DictReader(open(os.path.join(MOD, "packs", "ita", "clubs.csv"),
+                                                              encoding="utf-8"))}
+    ordinal = {e["team"]["team_name"]: o for o, (e, _) in enumerate(picked)}
+    rows = list(csv.DictReader(open(os.path.join(MOD, "packs", "ita", "ties.csv"), encoding="utf-8")))
+    cups = json.load(open(os.path.join(BASE, "competitions", "cups.json"), encoding="utf-8"))
+    base = next(c for c in cups["competitions"] if c["id"] == "_italianCup")
+    out = []
+    for key, slot in (("cup", 1), ("league_cup", 2)):
+        spec = next(c for c in pack["competitions"] if c["key"] == key)
+        ties, flips, rounds = bracket_order([r for r in rows if r["competition"] == key], len(spec["rounds"]))
+        if rounds != len(spec["rounds"]):
+            sys.exit("%s: %d rounds in the draw, %d in the pack" % (key, rounds, len(spec["rounds"])))
+        entrants = [c for t in ties for c in t if c]
+        size = 1 << (len(ties) * 2 - 1).bit_length()
+        if size > 32 or len(entrants) != len(set(entrants)):
+            sys.exit("%s: %d clubs in a bracket of %d" % (key, len(entrants), size))
+        rec = copy.deepcopy(base)
+        rec["comp"].update(team_list_offset=21, seed_reorder_flag=1)   # (the clubs as listed)
+        if slot == 2:
+            rec["id"] = "_italianLeagueCup"
+            rec["comp"].update(comp_id=LEAGUE_CUP_ID - 256, end_month=16)  # (as England's: before the league's end)
+            rec["name"] = spec["names"]["*"]
+        rec.update(teams=size, away_goals_mode=0,
+                   round_rule_flags=[{"legs": b >> 6, "extra_time": b >> 4 & 3, "penalties": b >> 2 & 3}
+                                     for b in [CUP_ROUND[x] for x in spec["rounds"]] + [0] * (6 - rounds)],
+                   team_seed_list=[{"country": country, "ordinal": ordinal[names[c]]} for c in entrants])
+        real = sum(1 for t in ties if t[1])
+        out.append({"slot": slot, "record": rec, "n": len(entrants), "ties": real,
+                    "europe": 0, "flips": flips})
+        counts["%s: clubs (byes)" % key] += len(entrants)
+        counts["%s: first round byes" % key] += len(ties) - real
+    return out
+
+
 def team_file_binary(teams):
     """The binary TEAM.nnn of a team file, as scripts/emit_teams.py makes 96/97's."""
     return tf.dict_filename(teams), tf.rnc_pack(tf.dict_to_blob(teams), tf.dict_rnc_method(teams))
@@ -363,6 +464,7 @@ WORLD_DATA_C = """/*
 #include "league_playoffs.h"
 #include "team_pool.h"
 #include "fixture_rounds.h"
+#include "world_cups.h"
 
 %(externs)s
 
@@ -445,6 +547,20 @@ const TeamPool *World_TeamPools(int32_t *count)
         return 0;
     }
 }
+
+/* The national cups (src/world_cups.c): their records, the clubs in the real bracket's
+ * order, round 1's real ties and the later rounds' ties played the other way round. */
+%(cups)s
+
+const WorldCup *World_Cups(int32_t *count)
+{
+    switch (World_Current()) {
+%(cup_cases)s
+    default:
+        *count = 0;
+        return 0;
+    }
+}
 """
 
 
@@ -452,7 +568,7 @@ def c_string(text):
     return '"%s"' % text.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def world_data_c(tag, leagues, resized, groups, playoffs, pools):
+def world_data_c(tag, leagues, resized, groups, playoffs, pools, cups):
     externs, strings, records, installs = set(), [], [], []
     symbols = {}
 
@@ -526,12 +642,35 @@ def world_data_c(tag, leagues, resized, groups, playoffs, pools):
     pool_tables.append("static const TeamPool kWorld%sPools[] = {\n%s\n};" % (tag, "\n".join(pool_entries)))
     pool_cases = ("    case WORLD_%s:\n        *count = %d;\n        return kWorld%sPools;"
                   % (tag, len(pools), tag))
+    cup_tables, cup_entries = [], []
+    for c in cups:
+        rec = c["record"]
+        names = []
+        for n in rec["name"]:
+            if n and not n.startswith("_"):
+                if n not in symbols:
+                    strings.append("static char %s[] = %s;" % (symbol(n), c_string(n)))
+                n = symbols[n]
+            elif n:
+                externs.add("extern char %s[];" % n)
+            names.append(n)
+        sym = "kWorld%s%s" % (tag, rec["id"])
+        cup_tables.append("static " + emit_competitions.emit_cup(dict(rec, id=sym, name=names)))
+        cup_tables.append("static const uint16_t %sFlips[] = { %s };" % (
+            sym, ", ".join(map(str, c["flips"])) or "0"))
+        cup_entries.append("    { %d, %d, &%s, %d, %d, %d, %d, %sFlips },   /* %s */" % (
+            rec["comp"]["team_number"], c["slot"], sym, c["n"], c["ties"], c["europe"],
+            len(c["flips"]) + 1, sym, rec["id"]))
+    cup_tables.append("static const WorldCup kWorld%sCups[] = {\n%s\n};" % (tag, "\n".join(cup_entries)))
+    cup_cases = ("    case WORLD_%s:\n        *count = %d;\n        return kWorld%sCups;"
+                 % (tag, len(cups), tag))
     return WORLD_DATA_C % {"externs": "\n".join(sorted(externs)),
                            "records": "\n\n".join(strings + records), "cases": cases,
                            "globals": GLOBAL_TEAM_NUMBERS,
                            "groups": "\n\n".join(group_tables), "group_cases": group_cases,
                            "playoffs": "\n\n".join(po_tables), "po_cases": po_cases,
-                           "pools": "\n\n".join(pool_tables), "pool_cases": pool_cases}
+                           "pools": "\n\n".join(pool_tables), "pool_cases": pool_cases,
+                           "cups": "\n\n".join(cup_tables), "cup_cases": cup_cases}
 
 
 def write(path, data):
@@ -563,7 +702,8 @@ def main():
     with open(os.path.join(REPO, "src", "world_data.c"), "w") as f:
         f.write(world_data_c("2627", leagues, [(country, teams["count"])],
                              [italian_groups(picked, country, leagues)],
-                             [italian_playoffs(country, leagues, picked)], [pool_info]))
+                             [italian_playoffs(country, leagues, picked)], [pool_info],
+                             italian_cups(picked, country)))
     print("wrote src/world_data.c")
     for what, n in sorted(counts.items()):
         print("  %-52s %d" % (what, n))

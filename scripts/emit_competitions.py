@@ -51,7 +51,8 @@ def _names(names):
 def _seed_list(seeds):
     if not seeds:
         return "{ }"
-    rows = ["        { %s, %d /* %s */ }," % (s["country"], s["ordinal"], s.get("team", ""))
+    rows = ["        { %s, %d%s }," % (s["country"], s["ordinal"],
+                                      " /* %s */" % s["team"] if s.get("team") else "")
             for s in seeds]
     return "{\n" + "\n".join(rows) + "\n    }"
 

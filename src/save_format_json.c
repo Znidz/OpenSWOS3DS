@@ -24,6 +24,7 @@
 #include "world.h"             /* "world" in career and competition saves */
 #include "team_pool.h"         /* "team_pool" in career saves */
 #include "world_playoff.h"     /* "world_playoff" in career saves */
+#include "world_cups.h"        /* "world_cups" in career saves */
 #include "comp_identity.h"     /* COMPID_copaLibertadores: an old save's Copa (128) */
 #include "translations.h"   /* tr() — localize competition name symbols */
 
@@ -6043,6 +6044,14 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
         mjson_printf(json_out_emit, &out, "%s", "]}");
     }
 
+    /* A world's cups (world_cups.c): the seasons the career has ended in the world, the
+     * league cup's winner and its season. */
+    if (World_Current() != WORLD_9697)
+        mjson_printf(json_out_emit, &out, ",\n  %Q:{%Q:%d,%Q:%d,%Q:%d}", "world_cups",
+                     "seasons", (int)g_worldCups.seasons,
+                     "league_cup_winner", (int)g_worldCups.leagueCupWinner,
+                     "league_cup_season", (int)g_worldCups.leagueCupSeason);
+
     /* A world's play-off the career club plays (world_playoff.c): which, its clubs (team
      * numbers), their places, points and the round under way, the other groups' tables
      * simulated early, the winner once decided. */
@@ -6507,6 +6516,22 @@ static void apply_semantic_load(const char *src, int src_size)
     {
         extern uint16_t _teamsLoaded;
         _teamsLoaded = 0;       /* (a pooled file: read again with this career's identities) */
+    }
+
+    /* A world's cups (world_cups.c); a save without it: its first season. */
+    WorldCups_Reset();
+    {
+        const char *wc = NULL;
+        int wclen = 0;
+        long v = 0;
+        if (mjson_find(src, src_size, "$.world_cups", &wc, &wclen) == MJSON_TOK_OBJECT) {
+            if (mjson_get_long(wc, wclen, "$.seasons", &v) > 0)
+                g_worldCups.seasons = (uint8_t)v;
+            if (mjson_get_long(wc, wclen, "$.league_cup_winner", &v) > 0)
+                g_worldCups.leagueCupWinner = (uint16_t)v;
+            if (mjson_get_long(wc, wclen, "$.league_cup_season", &v) > 0)
+                g_worldCups.leagueCupSeason = (uint8_t)v;
+        }
     }
 
     /* A world's play-off under way (world_playoff.c); slot 4 follows it

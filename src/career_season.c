@@ -26,6 +26,7 @@
 #include "transfer_market.h"
 #include "league_playoffs.h"
 #include "world_playoff.h"
+#include "world_cups.h"
 
 extern uint8_t _diyLeagueSeasonStateTable[];
 extern uint8_t _diyLeagueScratchBuffer[];
@@ -778,6 +779,9 @@ void Career_ProcessTertiaryCompetitionForNextSeason(uint8_t *competition)
         Career_AutoAdvanceCupCompetitionFromRecord(competition);
         DIY_CacheTertiaryQualifiedTeamGrid();
     }
+    /* a world's league cup with no European place (world_cups.c): its winner takes none */
+    if (!WorldCups_LeagueCupEurope(competition))
+        _cachedTertiaryQualifiedTeamId = 0xFFFF;
 }
 
 /* Career_ProcessCompetitionForNextSeason (SWOS2.s line 31908)
@@ -1737,6 +1741,7 @@ void Career_AdvanceToNextSeason_UpdateCompetitions(void)
             Career_CopaLibertadoresQualifiedTeamCount() == Career_CopaLibertadoresExpectedTeamCount() &&
             _careerFileBuffer == 0x50 + Career_CopaLibertadoresQualifiedTeamCount()) {
             Career_StorePromotionRelegationInSeasonInfo();
+            WorldCups_SeasonEnded();    /* (the next season plays its cups' own draw) */
             return;
         }
         _panicReasonCode = 0x8998;

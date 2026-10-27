@@ -374,6 +374,8 @@ extern const char _aGroupH[];
 extern const char _aHigh[];
 extern const char _aQF[];
 extern const char _aQFinal[];
+extern const char _aLast16[];
+extern const char _aRoundOf16[];
 extern const char _aRnd1[];
 extern const char _aRnd2[];
 extern const char _aRnd3[];

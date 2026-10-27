@@ -13,8 +13,11 @@
 #include "league_playoffs.h"
 #include "team_pool.h"
 #include "fixture_rounds.h"
+#include "world_cups.h"
 
 extern CompetitionLeague _italianLeague;
+extern char _aCoppaItalia[];
+extern char _aCoppa[];
 extern char _aSerieA[];
 extern char _aSerieB[];
 
@@ -45,6 +48,10 @@ static char kWorld2627_name11[] = "SERIE D GIRONE I";
 static char kWorld2627_name12[] = "SERIE C";
 
 static char kWorld2627_name13[] = "SERIE D";
+
+static char kWorld2627_name14[] = "COPPA ITALIA SERIE C";
+
+static char kWorld2627_name15[] = "COPPA SERIE C";
 
 static CompetitionLeague kWorld2627_italianLeague = {
     { { 61, 0, 20, 64, 32, 33, 0, 0, 0 }, 14, 2, 3, 53 },
@@ -512,6 +519,78 @@ const TeamPool *World_TeamPools(int32_t *count)
     case WORLD_2627:
         *count = 1;
         return kWorld2627Pools;
+    default:
+        *count = 0;
+        return 0;
+    }
+}
+
+/* The national cups (src/world_cups.c): their records, the clubs in the real bracket's
+ * order, round 1's real ties and the later rounds' ties played the other way round. */
+static CompetitionCup kWorld2627_italianCup = {
+    { { -124, 1, 20, 56, 32, 15, 0, 21, 1 }, 0, 16, 0, 53, 2 },
+    { 20, 20, -108, 20, 0, 0 },
+    { _aCoppaItalia, _aCoppa },
+    {
+        { 20, 7 },
+        { 20, 20 },
+        { 20, 5 },
+        { 20, 10 },
+        { 20, 2 },
+        { 20, 34 },
+        { 20, 3 },
+        { 20, 33 },
+        { 20, 0 },
+        { 20, 15 },
+        { 20, 6 },
+        { 20, 9 },
+        { 20, 4 },
+        { 20, 19 },
+        { 20, 1 },
+        { 20, 14 },
+    }
+};
+
+static const uint16_t kWorld2627_italianCupFlips[] = { 0, 0, 0 };
+
+static CompetitionCup kWorld2627_italianLeagueCup = {
+    { { -93, 1, 20, 56, 16, 15, 0, 21, 1 }, 0, 32, 0, 53, 2 },
+    { 20, 20, 20, -108, -108, 0 },
+    { kWorld2627_name14, kWorld2627_name15 },
+    {
+        { 20, 88 },
+        { 20, 96 },
+        { 20, 71 },
+        { 20, 99 },
+        { 20, 93 },
+        { 20, 40 },
+        { 20, 45 },
+        { 20, 61 },
+        { 20, 70 },
+        { 20, 59 },
+        { 20, 56 },
+        { 20, 52 },
+        { 20, 60 },
+        { 20, 76 },
+        { 20, 66 },
+        { 20, 90 },
+        { 20, 64 },
+    }
+};
+
+static const uint16_t kWorld2627_italianLeagueCupFlips[] = { 1, 1, 1, 0 };
+
+static const WorldCup kWorld2627Cups[] = {
+    { 20, 1, &kWorld2627_italianCup, 16, 8, 0, 4, kWorld2627_italianCupFlips },   /* _italianCup */
+    { 20, 2, &kWorld2627_italianLeagueCup, 17, 1, 0, 5, kWorld2627_italianLeagueCupFlips },   /* _italianLeagueCup */
+};
+
+const WorldCup *World_Cups(int32_t *count)
+{
+    switch (World_Current()) {
+    case WORLD_2627:
+        *count = 2;
+        return kWorld2627Cups;
     default:
         *count = 0;
         return 0;

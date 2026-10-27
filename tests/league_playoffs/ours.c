@@ -13,6 +13,8 @@ int32_t TeamPool_Swap(uint8_t c, uint8_t o) { (void)c; (void)o; return -1; }
 void TeamPool_SwapsDone(void) { }
 void LeagueGroups_Enter(uint16_t g) { (void)g; }
 WorldPlayoffState g_worldPlayoff;
+static uint16_t s_cupw;
+uint16_t WorldCups_LeagueCupWinner(uint8_t c) { (void)c; return s_cupw; }
 
 static const uint8_t PROM[14] = { 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 static const uint8_t REL[14] = { 3, 3, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2 };
@@ -27,6 +29,7 @@ int main(int argc, char **argv)
     load_spec(argv[1]);
     for (unsigned it = 0; it < N; it++) {
         make_tables(it, t, n);
+        s_cupw = cup_winner(it, t, n);
         LeaguePlayoffs_Begin();
         for (int d = 0; d < 14; d++) {
             for (int k = 0; k < n[d]; k++) {

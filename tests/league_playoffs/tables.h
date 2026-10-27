@@ -20,6 +20,19 @@ static void make_tables(unsigned it, struct trow t[14][32], int n[14])
         }
     }
 }
+/* The season's Coppa Italia Serie C winner (dplay.c's cupw): none a quarter of the time,
+ * else any club of Serie C's groups (divisions 2..4), at any place -- its own hash, so the
+ * tables stay the ones before it was added. */
+static unsigned short cup_winner(unsigned it, struct trow t[14][32], const int n[14])
+{
+    unsigned h = it * 2654435761u + 97u;
+    h ^= h >> 15;
+    if (h % 4 == 0)
+        return 0;
+    int d = 2 + (int)((h >> 4) % 3);
+    return t[d][(h >> 8) % (unsigned)n[d]].team;
+}
+
 static unsigned char spec[4096];
 static void load_spec(const char *path)
 {

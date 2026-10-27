@@ -7,6 +7,7 @@
  * but when the league ends, since which one the club plays (if any) is known only then.
  */
 #include "world_playoff.h"
+#include "world_cups.h"
 #include "league_playoffs.h"
 #include "league_groups.h"
 #include "game_types.h"
@@ -400,7 +401,7 @@ static int32_t c_playoff(const LeaguePlayoffs *lp, const TableRow *own, int32_t 
     static const uint8_t r1[6] = { 4, 9, 5, 8, 6, 7 };
     int32_t ng = lp->groups, g0 = (int32_t)_currentDivisionIndex - lp->groupFirst, n[3] = { 0, 0, 0 };
     WorldPlayoffState *v = &g_worldPlayoff;
-    if (ng != 3 || g0 < 0 || g0 >= 3 || mine < 1 || mine > 10)
+    if (ng != 3 || g0 < 0 || g0 >= 3 || mine < 1)
         return 0;
     /* the other groups' seasons, now (their tables kept for the season end) */
     for (int32_t g = 0, e = 0; g < 3; g++) {
@@ -419,23 +420,37 @@ static int32_t c_playoff(const LeaguePlayoffs *lp, const TableRow *own, int32_t 
     for (int32_t g = 0; g < 3; g++)
         if (n[g] < 11)
             return 0;
-    /* the cup winner's place: unknown here (no league cups yet), so the best 11th */
-    int32_t cg = 0;
-    for (int32_t g = 1; g < 3; g++) {
-        const WorldPlayoffRow *a = &tab[g][10].r, *b = &tab[cg][10].r;
-        const uint8_t la = (uint8_t)(tab[g][10].glob * 37 + 11), lb = (uint8_t)(tab[cg][10].glob * 37 + 11);
-        if (a->pts != b->pts ? a->pts > b->pts : a->won != b->won ? a->won > b->won :
-            a->gf != b->gf ? a->gf > b->gf : la < lb)
-            cg = g;
+    /* the Coppa Italia Serie C winner's place (dplay.c cup_place): the winner itself when it
+     * finished 11th or lower, the 11th of its group when promoted or already in; unknown:
+     * the best 11th. A career club not in the cup has it played now (world_cups.c). */
+    const uint8_t country = (uint8_t)_careerTeam.team.countryNumber;
+    WorldCups_PlayLeagueCupEarly(country);
+    const uint16_t cupw = WorldCups_LeagueCupWinner(country);
+    int32_t cg = -1, cp = 10;
+    for (int32_t g = 0; g < 3 && cupw && cg < 0; g++)
+        for (int32_t k = 0; k < n[g]; k++)
+            if (tab[g][k].team == cupw) {
+                cg = g;
+                cp = k >= 10 ? k : 10;
+            }
+    if (cg < 0) {
+        cg = 0;
+        for (int32_t g = 1; g < 3; g++) {
+            const WorldPlayoffRow *a = &tab[g][10].r, *b = &tab[cg][10].r;
+            const uint8_t la = (uint8_t)(tab[g][10].glob * 37 + 11), lb = (uint8_t)(tab[cg][10].glob * 37 + 11);
+            if (a->pts != b->pts ? a->pts > b->pts : a->won != b->won ? a->won > b->won :
+                a->gf != b->gf ? a->gf > b->gf : la < lb)
+                cg = g;
+        }
     }
-    if (!(mine >= 1 && mine <= 9) && !(cg == g0 && mine == 10))
+    if (!(mine >= 1 && mine <= 9) && !(cg == g0 && mine == cp))
         return 0;
     int32_t i = 0;
     for (int32_t g = 0; g < 3; g++)
         for (int32_t k = 0; k < 6; k++) { v->place[i] = r1[k]; v->group[i++] = (uint8_t)g; }
     for (int32_t p = 3; p >= 1; p--) {
         for (int32_t g = 0; g < 3; g++) { v->place[i] = (uint8_t)p; v->group[i++] = (uint8_t)g; }
-        if (p == 2) { v->place[i] = 10; v->group[i++] = (uint8_t)cg; }
+        if (p == 2) { v->place[i] = (uint8_t)cp; v->group[i++] = (uint8_t)cg; }
     }
     v->kind = WORLD_PLAYOFF_C_PLAYOFF;
     v->n = (uint8_t)i;
@@ -560,7 +575,9 @@ int32_t WorldPlayoff_CareerLeagueEnded(void)
     WorldPlayoff_Reset();
     const int32_t serieC = lp->italy && (int32_t)_currentDivisionIndex >= lp->groupFirst &&
                            (int32_t)_currentDivisionIndex < lp->groupFirst + lp->groups;
-    if (serieC && mine >= 1 && mine <= 10) {
+    /* (the cup winner placed 11th or lower plays in its place: in the cup, so it is known) */
+    if (serieC && mine >= 1 &&
+        (mine <= 10 || WorldCups_LeagueCupWinner((uint8_t)_careerTeam.team.countryNumber) == team[mine])) {
         /* the play-off (2nd-10th, or the cup place); else its play-out, if any */
         if (!c_playoff(lp, own, nown, mine)) {
             const uint8_t early = g_worldPlayoff.early;

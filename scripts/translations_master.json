@@ -1,4 +1,18 @@
 {
+"LAST 16": {
+"de": "ACHTELF.",
+"es": "OCTAVOS",
+"fr": "8ES",
+"it": "OTTAVI",
+"nl": "8STE FIN."
+},
+"ROUND OF 16": {
+"de": "ACHTELFINALE",
+"es": "OCTAVOS DE FINAL",
+"fr": "HUITIÈMES DE FINALE",
+"it": "OTTAVI DI FINALE",
+"nl": "ACHTSTE FINALES"
+},
 "\u0000WE HERE AT %a WOULD LIKE TO OFFER YOU THE": {
 "de": "\u0000WIR HIER BEI %a MÖCHTEN IHNEN DEN",
 "es": "\u0000AQUÍ EN %a NOS GUSTARÍA OFRECERLE EL",

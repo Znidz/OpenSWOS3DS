@@ -72,6 +72,7 @@ static void make_record(void)
         z[i] = 0;
     s_rec.header.comp = _div1Playoffs.comp;
     s_rec.header.comp.compId = (uint8_t)COMPID_worldPlayoff;
+    s_rec.header.comp.teamNumber = (int8_t)_careerTeam.team.countryNumber;   /* ("ITALIAN ...") */
     s_rec.header.comp.isPlayoff = 0;
     s_rec.header.comp.reserved1 = 15;           /* (a cup's, inert) */
     s_rec.header.comp.reserved2 = 21;
@@ -633,6 +634,21 @@ void WorldPlayoff_ArrangeNextRound(void)
         g_worldPlayoff.etp = g_worldPlayoff.pts[a] == g_worldPlayoff.pts[b];
         round_rules(2, 2, g_worldPlayoff.etp, g_worldPlayoff.etp);
     }
+}
+
+/* A round's name where the engine's (by the rounds left) would mislead: Serie B's first
+ * round is its preliminary (the Mod's rnames), a single round has none (not "FINAL"). */
+static char s_prelim[] = "PRELIMINARY ROUND", s_noRound[] = "";
+
+const char *WorldPlayoff_RoundName(uint16_t round, uint16_t rounds)
+{
+    if (!ours() || rounds != (uint16_t)_diyCompetitionStart.base.numRounds)
+        return 0;
+    if (rounds == 1)
+        return s_noRound;
+    if (g_worldPlayoff.kind == WORLD_PLAYOFF_B_PLAYOFF && round == 0)
+        return s_prelim;
+    return 0;
 }
 
 void WorldPlayoff_RoundSize(void)

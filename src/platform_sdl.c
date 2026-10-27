@@ -299,6 +299,13 @@ static volatile Uint32 s_last_main_render_ms;
  * In all cases the request is processed inside Platform_RenderFrame while
  * the render mutex is held, so the captured ARGB buffer is consistent. */
 static volatile int s_screenshot_request;
+
+/* A screenshot at the next full render, as F12 takes one (the career autopilot's test
+ * switch SWOS_GOLDEN_SHOT_COMP, career_autopilot.c). */
+void Platform_RequestScreenshot(void)
+{
+    s_screenshot_request = 1;
+}
 static int          s_screenshot_index;
 static int          s_screenshot_interval;   /* 0 = disabled, N>0 = every N frames */
 static int          s_present_capture;       /* 0 = disabled, N>0 = every N frames (see capture_presented_frame) */

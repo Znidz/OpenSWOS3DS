@@ -971,6 +971,9 @@ uint16_t GetNextCupRoundStringIndex(uint16_t cur, uint16_t n, uint16_t add)
 __attribute__((used, externally_visible))
 const char *GetNextCupRoundString(uint16_t cur, uint16_t n, uint16_t add)
 {
+    const char *own = WorldPlayoff_RoundName(cur, n);   /* (a world's play-off: world_playoff.c) */
+    if (own)
+        return own;
     uint16_t idx = GetNextCupRoundStringIndex(cur, n, add);
     return (const char *)_cupRoundStringTable[idx];
 }
@@ -6935,6 +6938,8 @@ void DesignDIYCup_BuildMenuTitleString(void)
         uint16_t d2 = (uint16_t)a2s->subRoundCounter;  /* 0x5C */
         const char *roundStr = GetNextCupRoundString(d0, d1, d2);
         dst = StringCopy((const uint8_t *)roundStr, dst);
+        if (!roundStr[0])
+            dst--;              /* (no round name -- a world's single-round play-off: no space) */
         /* Fall through to replay/leg check */
     }
 

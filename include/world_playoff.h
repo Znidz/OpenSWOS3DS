@@ -97,6 +97,9 @@ void WorldPlayoff_RoundSize(void);
  * results, place by place (dplay.c dp_restore), so the play-off's seeding stands. */
 void WorldPlayoff_RestoreEarlyTable(uint16_t division);
 
+/* A round's name for the contest under way where the engine's would mislead, or 0. */
+const char *WorldPlayoff_RoundName(uint16_t round, uint16_t rounds);
+
 /* After a career is loaded: slot 4 back on the contest, if one is under way. */
 void WorldPlayoff_RestoreSlot(void);
 

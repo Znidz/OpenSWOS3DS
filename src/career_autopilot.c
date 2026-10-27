@@ -329,6 +329,25 @@ void CareerAutopilot_Tick(void)
                 (unsigned)_currentSeasonShowing);
         }
     }
+    {
+        /* Test (SWOS_GOLDEN_SHOT_COMP=<competition id>): a screenshot of each new screen
+         * while that competition is the one under way -- to look at it (a world's
+         * play-off: world_playoff.c). */
+        static const char *shot = (const char *)1;
+        static MenuVoidFn shotLast;
+        static int32_t shots;
+        extern DIYCompetitionEx _diyCompetitionStart;
+        extern void Platform_RequestScreenshot(void);
+        if (shot == (const char *)1)
+            shot = getenv("SWOS_GOLDEN_SHOT_COMP");
+        if (shot && (uint8_t)_diyCompetitionStart.base.field_2E == (uint8_t)atoi(shot) &&
+            menu->onInit != shotLast && shots < 40) {
+            shotLast = menu->onInit;
+            shots++;
+            Platform_RequestScreenshot();
+            say("[golden] screenshot %d (tick %u)\n", (int)shots, (unsigned)_currentTick);
+        }
+    }
     _currentTick++;                     /* the clock the game's seeds read, once per pass */
     if (s_choosing) {
         choose_step(menu);

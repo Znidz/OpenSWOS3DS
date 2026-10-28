@@ -123,14 +123,19 @@ jobs:
 
       - name: Build
         run: |
+          set +e +o pipefail
           export PATH="$DEVKITARM/bin:$PATH"
-          make -f Makefile.3ds -j"$(nproc)" 2>&1 | tee build.log
-          test -f OpenSWOS3D.3dsx || {
-            grep -E "error|undefined reference" build.log | head -n 20 | while IFS= read -r line; do
-              echo "::error::$(echo "$line" | cut -c1-300)"
+          make -f Makefile.3ds -j"$(nproc)" > build.log 2>&1
+          rc=$?
+          tail -n 60 build.log
+          if [ $rc -ne 0 ] || [ ! -f OpenSWOS3D.3dsx ]; then
+            # The run's summary page shows these, so the cause is readable from a phone
+            { grep -E "error|undefined reference|No such file|\*\*\*" build.log | head -n 25
+              tail -n 6 build.log; } | while IFS= read -r line; do
+              echo "::error::$(echo "$line" | cut -c1-400)"
             done
             exit 1
-          }
+          fi
 
       - name: Package CIA
         if: steps.tools.outcome == 'success'

@@ -44,10 +44,25 @@ jobs:
           }
           retry apt-get install -y --no-install-recommends jq unzip curl
           retry dkp-pacman -Sy --needed --noconfirm 3ds-dev
-          # SDL2 for the 3DS (3ds-sdl is the old SDL 1.2 on some package lists)
-          dkp-pacman -S --needed --noconfirm 3ds-sdl2 || dkp-pacman -S --needed --noconfirm 3ds-sdl
-          echo "::notice::SDL headers: $(find "$DEVKITPRO/portlibs/3ds" -name SDL.h | tr '\n' ' ')"
-          echo "::notice::SDL2 pkg-config: $("$DEVKITPRO/portlibs/3ds/bin/arm-none-eabi-pkg-config" --cflags --libs sdl2 2>&1 | tr '\n' ' ')"
+          retry dkp-pacman -S --needed --noconfirm 3ds-cmake 3ds-pkg-config || true
+          retry apt-get install -y --no-install-recommends cmake make
+
+      - name: Build SDL2 for the 3DS
+        run: |
+          # devkitPro packages only SDL 1.2 for the 3DS; SDL2 supports it upstream
+          # (SDL docs/README-n3ds.md), so build it into the 3DS portlibs.
+          git clone --depth 1 -b release-2.30.x https://github.com/libsdl-org/SDL.git /tmp/SDL2
+          TC="$DEVKITPRO/cmake/3DS.cmake"
+          [ -f "$TC" ] || { echo "::error::No 3DS CMake toolchain at $TC"; ls "$DEVKITPRO/cmake" || true; exit 1; }
+          cmake -S /tmp/SDL2 -B /tmp/SDL2/build -DCMAKE_TOOLCHAIN_FILE="$TC" \
+                -DCMAKE_BUILD_TYPE=Release -DSDL_TESTS=OFF -DSDL_SHARED=OFF -DSDL_STATIC=ON \
+                -DCMAKE_INSTALL_PREFIX="$DEVKITPRO/portlibs/3ds" > /tmp/sdl-config.log 2>&1 \
+            || { tail -n 30 /tmp/sdl-config.log; tail -n 8 /tmp/sdl-config.log | while IFS= read -r l; do echo "::error::SDL2 cmake: $l"; done; exit 1; }
+          cmake --build /tmp/SDL2/build -j"$(nproc)" > /tmp/sdl-build.log 2>&1 \
+            || { tail -n 30 /tmp/sdl-build.log; grep -E "error" /tmp/sdl-build.log | head -n 10 | while IFS= read -r l; do echo "::error::SDL2 build: $l"; done; exit 1; }
+          cmake --install /tmp/SDL2/build > /dev/null
+          echo "::notice::SDL2: $(find "$DEVKITPRO/portlibs/3ds" -name 'libSDL2*.a' | tr '\n' ' ')"
+          echo "::notice::SDL2 pkg-config: $(PKG_CONFIG_LIBDIR="$DEVKITPRO/portlibs/3ds/lib/pkgconfig" pkg-config --cflags --libs sdl2 2>&1 | tr '\n' ' ')"
 
       - name: Get makerom and bannertool
         id: tools

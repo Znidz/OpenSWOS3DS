@@ -139,7 +139,7 @@ $(ELF): $(OBJECTS)
 romfs-stage:
 	@rm -rf $(ROMFS)
 	@mkdir -p $(ROMFS)
-	@sh scripts/stage_runtime.sh $(ROMFS) $(ROMFS_DIRS)
+	@bash scripts/stage_runtime.sh $(ROMFS) $(ROMFS_DIRS)
 
 $(OBJDIR)/$(TARGET).smdh: $(APP_ICON) | $(OBJDIR)
 	$(TOOLS)/smdhtool --create "$(APP_TITLE)" "$(APP_DESCRIPTION)" "$(APP_AUTHOR)" $(APP_ICON) $@

@@ -6046,11 +6046,17 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
 
     /* A world's cups (world_cups.c): the seasons the career has ended in the world, the
      * league cup's winner and its season. */
-    if (World_Current() != WORLD_9697)
-        mjson_printf(json_out_emit, &out, ",\n  %Q:{%Q:%d,%Q:%d,%Q:%d}", "world_cups",
+    if (World_Current() != WORLD_9697) {
+        mjson_printf(json_out_emit, &out, ",\n  %Q:{%Q:%d,%Q:%d,%Q:%d,%Q:%d,%Q:%d,%Q:[", "world_cups",
                      "seasons", (int)g_worldCups.seasons,
                      "league_cup_winner", (int)g_worldCups.leagueCupWinner,
-                     "league_cup_season", (int)g_worldCups.leagueCupSeason);
+                     "league_cup_season", (int)g_worldCups.leagueCupSeason,
+                     "places_season", (int)g_worldCups.placesSeason,
+                     "places_country", (int)g_worldCups.placesCountry, "places");
+        for (int i = 0; i < 256; i++)
+            mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)g_worldCups.place[i]);
+        mjson_printf(json_out_emit, &out, "%s", "]}");
+    }
 
     /* A world's play-off the career club plays (world_playoff.c): which, its clubs (team
      * numbers), their places, points and the round under way, the other groups' tables
@@ -6531,6 +6537,15 @@ static void apply_semantic_load(const char *src, int src_size)
                 g_worldCups.leagueCupWinner = (uint16_t)v;
             if (mjson_get_long(wc, wclen, "$.league_cup_season", &v) > 0)
                 g_worldCups.leagueCupSeason = (uint8_t)v;
+            if (mjson_get_long(wc, wclen, "$.places_season", &v) > 0)
+                g_worldCups.placesSeason = (uint8_t)v;
+            if (mjson_get_long(wc, wclen, "$.places_country", &v) > 0)
+                g_worldCups.placesCountry = (uint8_t)v;
+            const char *arr; int al, pos = 0, voff, vlen, vt, i = 0;
+            if (mjson_find(wc, wclen, "$.places", &arr, &al) == MJSON_TOK_ARRAY)
+                while (i < 256 && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
+                    if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
+                        g_worldCups.place[i++] = (uint8_t)v;
         }
     }
 

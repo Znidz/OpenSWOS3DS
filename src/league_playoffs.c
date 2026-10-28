@@ -599,6 +599,10 @@ void LeaguePlayoffs_Decide(uint16_t country, const int8_t *table, int8_t *scratc
     for (int32_t d = 0; d < lp->divisions; d++)
         if (!s_in.n[d])
             return;                     /* (a division not played out this season) */
+    /* every club's final place, before the moves: the next season's cups (world_cups.c) */
+    for (int32_t d = 0; d < lp->divisions; d++)
+        for (int32_t k = 0; k < s_in.n[d]; k++)
+            WorldCups_KeepPlace((uint8_t)country, (uint16_t)d, s_in.t[d][k].team, (uint8_t)(k + 1));
 
     s_nmv = 0;
     if (lp->italy) {

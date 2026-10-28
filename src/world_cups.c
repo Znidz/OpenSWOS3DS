@@ -6,10 +6,13 @@
 #include "swos_types.h"
 #include "world_cups.h"
 #include "endian_helpers.h"
+#include "league_groups.h"
 
 extern void *_competitionsTable[];
 extern DIYCompetitionEx _diyCompetitionStart;
 extern TeamFileEx _careerTeam;
+extern uint8_t _diyLeagueSeasonStateTable[];
+extern uint16_t _teamsCountryNumbers[];
 extern void Comp_Register(Competition *c);
 extern void DIY_ShuffleTeamGridPairs(void);
 extern uint16_t _internationalAutoAdvanceFlag;
@@ -56,9 +59,9 @@ WorldCupsState g_worldCups;
 
 void WorldCups_Reset(void)
 {
-    g_worldCups.seasons = 0;
-    g_worldCups.leagueCupSeason = 0;
-    g_worldCups.leagueCupWinner = 0;
+    uint8_t *p = (uint8_t *)&g_worldCups;
+    for (uint32_t i = 0; i < sizeof g_worldCups; i++)
+        p[i] = 0;
 }
 
 void WorldCups_SeasonEnded(void)
@@ -73,17 +76,125 @@ static int32_t first_season(void)
     return g_worldCups.seasons == 0;
 }
 
+/* Each cup's real list (its record's, as installed: the first season's). */
+#define WORLD_CUPS_MAX 8
+static TeamId s_real[WORLD_CUPS_MAX][32];
+
+static int32_t cup_index(const WorldCup *c)
+{
+    int32_t count = 0;
+    const WorldCup *cups = World_Cups(&count);
+    return (int32_t)(c - cups);
+}
+
+/* A division's level among the country's levels of groups (Serie C's three groups: one). */
+static int32_t level_of(const LeagueGroups *lg, int32_t division)
+{
+    for (int32_t i = 0; lg && i < lg->levels; i++)
+        if (division >= lg->level[i].first && division < lg->level[i].first + lg->level[i].groups)
+            return i;
+    return division;
+}
+
+/* This season's clubs of a cup (gplay.c cf_build, CF_SEED 1): 0 when it plays the real list
+ * (the first season; a division with fewer clubs than its quota). */
+static int32_t build(const WorldCup *c, TeamId *out)
+{
+    const LeagueGroups *lg = LeagueGroups_ForCountry(c->country);
+    const int32_t ranked = g_worldCups.placesCountry == c->country &&
+                           (uint8_t)(g_worldCups.placesSeason + 1) == g_worldCups.seasons;
+    TeamId byes[32];
+    uint8_t cand[256];
+    uint32_t key[256];
+    int32_t at = 0, nb = 0;
+    if (first_season() || !lg || !c->groups)
+        return 0;
+    for (int32_t g = 0; g < c->groups; g++) {
+        const int32_t dv = c->quota[g][0], want = c->quota[g][1], wb = c->quota[g][2];
+        const int32_t nl = level_of(lg, dv);
+        int32_t m = 0;
+        /* the division's clubs this season (its base, moved by the league's table), by ordinal */
+        for (int32_t q = 0; q < lg->clubs; q++) {
+            const LeagueGroupClub *k = &lg->club[q];
+            const uint16_t glob = (uint16_t)(_teamsCountryNumbers[c->country] + k->ordinal);
+            if (k->base + (int8_t)_diyLeagueSeasonStateTable[glob] == dv)
+                cand[m++] = k->ordinal;
+        }
+        if (m < want)
+            return 0;
+        /* relegated into it, stayed, promoted, without a place; then the place, the ordinal */
+        for (int32_t i = 0; i < m; i++) {
+            const int32_t v = ranked ? g_worldCups.place[cand[i]] : 0;
+            const int32_t r = v ? (v & 31) : 0xFF, ol = v ? v >> 5 : nl;
+            const int32_t grp = !v ? 3 : ol < nl ? 0 : ol == nl ? 1 : 2;
+            key[i] = (uint32_t)grp << 16 | (uint32_t)r << 8 | cand[i];
+        }
+        for (int32_t i = 1; i < m; i++)
+            for (int32_t j = i; j > 0 && key[j - 1] > key[j]; j--) {
+                const uint32_t kk = key[j]; key[j] = key[j - 1]; key[j - 1] = kk;
+                const uint8_t x = cand[j]; cand[j] = cand[j - 1]; cand[j - 1] = x;
+            }
+        if (_careerTeam.team.countryNumber == c->country)       /* the career club first */
+            for (int32_t i = 0; i < m; i++)
+                if (cand[i] == _careerTeam.team.teamOrdinal) {
+                    const uint8_t x = cand[i];
+                    for (int32_t j = i; j > 0; j--) cand[j] = cand[j - 1];
+                    cand[0] = x;
+                    break;
+                }
+        for (int32_t k = 0; k < want; k++) {
+            TeamId *t = k >= want - wb ? (nb < 32 ? &byes[nb++] : 0) : (at < 32 ? &out[at++] : 0);
+            if (t) {
+                t->countryNumber = c->country;
+                t->teamOrdinal = cand[k];
+            }
+        }
+    }
+    for (int32_t k = 0; k < nb && at < 32; k++)
+        out[at++] = byes[k];                    /* (the byes after round 1's clubs) */
+    return at == c->n ? at : 0;
+}
+
+/* The cup's clubs this season, in its record's order (round 1's, then the byes). */
+static const TeamId *entrants(const WorldCup *c)
+{
+    static TeamId list[32];
+    const int32_t i = cup_index(c);
+    if (build(c, list))
+        return list;
+    return i < WORLD_CUPS_MAX ? s_real[i] : comp_team_seed_list((Competition *)c->record);
+}
+
 int32_t WorldCups_Plays(const uint8_t *record)
 {
     const WorldCup *c = cup_of(record);
     if (!c)
         return 1;
-    const TeamId *list = comp_team_seed_list((Competition *)record);
+    const TeamId *list = entrants(c);
     for (int32_t i = 0; i < c->n; i++)
         if (list[i].countryNumber == _careerTeam.team.countryNumber &&
             list[i].teamOrdinal == _careerTeam.team.teamOrdinal)
             return 1;
     return 0;
+}
+
+void WorldCups_KeepPlace(uint8_t country, uint16_t division, uint16_t team, uint8_t place)
+{
+    int32_t count = 0, ours = 0;
+    const WorldCup *cups = World_Cups(&count);
+    for (int32_t i = 0; i < count; i++)
+        if (cups[i].country == country)
+            ours = 1;
+    if (!ours || (team >> 8) != country)
+        return;
+    if (g_worldCups.placesCountry != country || g_worldCups.placesSeason != g_worldCups.seasons) {
+        for (int32_t i = 0; i < 256; i++)
+            g_worldCups.place[i] = 0;
+        g_worldCups.placesCountry = country;
+        g_worldCups.placesSeason = g_worldCups.seasons;
+    }
+    g_worldCups.place[team & 0xFF] = (uint8_t)((place > 31 ? 31 : place) |
+                                               level_of(LeagueGroups_ForCountry(country), division) << 5);
 }
 
 void WorldCups_Install(void)
@@ -101,13 +212,28 @@ void WorldCups_Install(void)
             tbl[sep + 3] = (Competition *)(intptr_t)-1;
         tbl[sep + cups[i].slot] = (Competition *)cups[i].record;
         Comp_Register((Competition *)cups[i].record);
+        const TeamId *list = comp_team_seed_list((Competition *)cups[i].record);
+        for (int32_t k = 0; i < WORLD_CUPS_MAX && k < cups[i].n && k < 32; k++)
+            s_real[i][k] = list[k];
     }
 }
 
 uint16_t WorldCups_Entrants(const uint8_t *record, uint16_t count)
 {
     const WorldCup *c = cup_of(record);
-    return c ? c->n : count;
+    if (!c)
+        return count;
+    /* this season's clubs into the record, where the loader reads them */
+    const TeamId *list = entrants(c);
+    TeamId *seeds = comp_team_seed_list((Competition *)record);
+    SWOS_DBG("[world-cup] %u's clubs (season %u):", (unsigned)(uint8_t)((const Competition *)record)->compId,
+             (unsigned)g_worldCups.seasons);
+    for (int32_t k = 0; k < c->n; k++) {
+        seeds[k] = list[k];
+        SWOS_DBG(" %u", (unsigned)list[k].teamOrdinal);
+    }
+    SWOS_DBG("\n");
+    return c->n;
 }
 
 void WorldCups_Padded(const uint8_t *record)
@@ -127,8 +253,13 @@ void WorldCups_CupMade(const uint8_t *record)
     uint8_t *grid = x->teamGridPairings;
     if (!c)
         return;
-    if (!first_season() && c->ties * 2 == c->n)
-        DIY_ShuffleTeamGridPairs();             /* (no byes: a later season's draw) */
+    if (!first_season()) {
+        /* a later season's draw: round 1's clubs only (lib97 nc_bye), the byes wait */
+        const int16_t pairs = x->base.matchPairsPerRound;
+        x->base.matchPairsPerRound = c->ties;
+        DIY_ShuffleTeamGridPairs();
+        x->base.matchPairsPerRound = pairs;
+    }
     if (c->ties * 2 == c->n)
         return;
     /* the real ties first, as listed; then each waiting club's tie with itself */

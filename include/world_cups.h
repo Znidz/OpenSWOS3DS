@@ -5,8 +5,13 @@
  * A world cup is a fixed list of clubs in its record (as the Mod's: the pack's ties.csv),
  * in the order of the real bracket: in the world's first season round 1 is the real draw
  * and each later round the winners of ties 2k and 2k + 1 of the one before -- the real
- * pairs, with the side each was played on -- instead of the engine's draw. Later seasons
- * keep the clubs (the Mod's 4.0) and draw each round.
+ * pairs, with the side each was played on -- instead of the engine's draw. From the second
+ * season (the Mod's 4.0.1: tools/cupsf.py, gplay.c cf_build) the clubs come from the
+ * divisions as they are that season, as many from each as the real list had (and as many
+ * of them waiting for round 2): within a division the clubs relegated into it first, then
+ * those that stayed, then the promoted, each by last season's final place; the career club
+ * always plays when its division does. Round 1 is drawn among the clubs without a bye, every
+ * later round too.
  *
  * Round 1 may have byes (the Coppa Italia Serie C: one tie, fifteen clubs waiting): the
  * bracket is the next power of two, the real ties first and each waiting club's tie with
@@ -29,6 +34,8 @@ typedef struct {
     uint8_t         europe;     /* the winner takes the country's league-cup European place */
     uint8_t         rounds;     /* the rounds of the first season's real draw */
     const uint16_t *flips;      /* per later round, its ties played the other way round (bit k) */
+    uint8_t         groups;     /* from the second season: per division of the real list, */
+    const uint8_t (*quota)[3];  /* (its division, its clubs, how many of them have a bye) */
 } WorldCup;
 
 const WorldCup *World_Cups(int32_t *count);     /* (world_data.c, generated) */
@@ -38,6 +45,9 @@ typedef struct {
     uint8_t  seasons;           /* the seasons ended (255: and more) */
     uint8_t  leagueCupSeason;   /* the season (seasons) its league cup's winner is of */
     uint16_t leagueCupWinner;   /* {country, ordinal}, 0: not decided yet */
+    uint8_t  placesSeason;      /* the season (seasons) the places are of */
+    uint8_t  placesCountry;     /* its country, 0: none kept */
+    uint8_t  place[256];        /* per ordinal: its final place (1..31) | its division's level << 5 */
 } WorldCupsState;
 
 extern WorldCupsState g_worldCups;
@@ -70,6 +80,10 @@ void WorldCups_CupMade(const uint8_t *record);
 /* Right after the engine draws the next round (DIY_ReorderTeamGridByOrderList): the first
  * season's real bracket instead. */
 void WorldCups_ArrangeNextRound(void);
+
+/* The season end has a league's final table (league_playoffs.c, before the moves): each
+ * club's place, for the next season's cups (gplay.c cf_cap_c). */
+void WorldCups_KeepPlace(uint8_t country, uint16_t division, uint16_t team, uint8_t place);
 
 /* A tie was decided (ProcessDIYKnockoutMatchResultAndCareerUpdates, played or simulated):
  * a world league cup's final -- its winner kept for the season. */

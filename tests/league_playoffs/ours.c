@@ -15,6 +15,7 @@ void LeagueGroups_Enter(uint16_t g) { (void)g; }
 WorldPlayoffState g_worldPlayoff;
 static uint16_t s_cupw;
 uint16_t WorldCups_LeagueCupWinner(uint8_t c) { (void)c; return s_cupw; }
+void WorldCups_KeepPlace(uint8_t c, uint16_t d, uint16_t t, uint8_t p) { (void)c; (void)d; (void)t; (void)p; }
 
 static const uint8_t PROM[14] = { 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 static const uint8_t REL[14] = { 3, 3, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2 };

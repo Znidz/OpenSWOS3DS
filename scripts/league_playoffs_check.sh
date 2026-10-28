@@ -11,6 +11,8 @@
 # The Mod's side walks the pack's whole knockout spec (its compile_spec, every kind); ours
 # the part world_import.py compiles (promotion, play-out) -- the rest must not change them.
 # Then the B-team rules (its sec_post): built cases, and random ones against the Mod's.
+# Then the cups' clubs from the second season (its 4.0.1 cf_build, CF_SEED 1 as released):
+# random moves, last season's places and career clubs, both cups' lists compared.
 # Needs the world's data (bin/data_json/worlds/2627/mod/, not in git): skipped without it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -65,5 +67,18 @@ if cmp -s "$OUT/mod_sec.txt" "$OUT/sec.txt"; then
 else
     echo "FAIL: B teams, the first case that differs (Mod, then ours):"
     diff "$OUT/mod_sec.txt" "$OUT/sec.txt" | head -4
+    exit 1
+fi
+
+# The cups' clubs from the second season (the Mod's cf_build; src/world_cups.c build).
+$CC -DCF_SEED=1 -DGPLAY_C="\"$MOD/tools/gplay.c\"" -o "$OUT/cups_mod" $T/cups_mod.c
+$CC -Iinclude -include include/swos_platform.h -DSWOS_SDL_BUILD -o "$OUT/cups_ours" $T/cups_ours.c
+"$OUT/cups_mod" "$N" > "$OUT/cups_mod.txt"
+"$OUT/cups_ours" "$N" > "$OUT/cups_ours.txt" 2>/dev/null
+if cmp -s "$OUT/cups_mod.txt" "$OUT/cups_ours.txt"; then
+    echo "PASS: cups, $N seasons, both cups' clubs the Mod's"
+else
+    echo "FAIL: cups, the first season that differs (Mod, then ours):"
+    diff "$OUT/cups_mod.txt" "$OUT/cups_ours.txt" | head -4
     exit 1
 fi

@@ -526,7 +526,8 @@ const TeamPool *World_TeamPools(int32_t *count)
 }
 
 /* The national cups (src/world_cups.c): their records, the clubs in the real bracket's
- * order, round 1's real ties and the later rounds' ties played the other way round. */
+ * order, round 1's real ties and the later rounds' ties played the other way round; from
+ * the second season, per division its clubs and how many of them have a bye. */
 static CompetitionCup kWorld2627_italianCup = {
     { { -124, 1, 20, 56, 32, 15, 0, 21, 1 }, 0, 16, 0, 53, 2 },
     { 20, 20, -108, 20, 0, 0 },
@@ -552,6 +553,8 @@ static CompetitionCup kWorld2627_italianCup = {
 };
 
 static const uint16_t kWorld2627_italianCupFlips[] = { 0, 0, 0 };
+
+static const uint8_t kWorld2627_italianCupQuota[][3] = { { 0, 13, 0 }, { 1, 3, 0 } };
 
 static CompetitionCup kWorld2627_italianLeagueCup = {
     { { -93, 1, 20, 56, 16, 15, 0, 21, 1 }, 0, 32, 0, 53, 2 },
@@ -580,9 +583,11 @@ static CompetitionCup kWorld2627_italianLeagueCup = {
 
 static const uint16_t kWorld2627_italianLeagueCupFlips[] = { 1, 1, 1, 0 };
 
+static const uint8_t kWorld2627_italianLeagueCupQuota[][3] = { { 2, 5, 5 }, { 3, 7, 7 }, { 4, 5, 3 } };
+
 static const WorldCup kWorld2627Cups[] = {
-    { 20, 1, &kWorld2627_italianCup, 16, 8, 0, 4, kWorld2627_italianCupFlips },   /* _italianCup */
-    { 20, 2, &kWorld2627_italianLeagueCup, 17, 1, 0, 5, kWorld2627_italianLeagueCupFlips },   /* _italianLeagueCup */
+    { 20, 1, &kWorld2627_italianCup, 16, 8, 0, 4, kWorld2627_italianCupFlips, 2, kWorld2627_italianCupQuota },   /* _italianCup */
+    { 20, 2, &kWorld2627_italianLeagueCup, 17, 1, 0, 5, kWorld2627_italianLeagueCupFlips, 3, kWorld2627_italianLeagueCupQuota },   /* _italianLeagueCup */
 };
 
 const WorldCup *World_Cups(int32_t *count)

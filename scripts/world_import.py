@@ -411,6 +411,7 @@ def italian_cups(picked, country):
     names = {r["key"]: r["name"] for r in csv.DictReader(open(os.path.join(MOD, "packs", "ita", "clubs.csv"),
                                                               encoding="utf-8"))}
     ordinal = {e["team"]["team_name"]: o for o, (e, _) in enumerate(picked)}
+    division = {o: d for o, (_, d) in enumerate(picked)}
     rows = list(csv.DictReader(open(os.path.join(MOD, "packs", "ita", "ties.csv"), encoding="utf-8")))
     cups = json.load(open(os.path.join(BASE, "competitions", "cups.json"), encoding="utf-8"))
     base = next(c for c in cups["competitions"] if c["id"] == "_italianCup")
@@ -435,8 +436,17 @@ def italian_cups(picked, country):
                                      for b in [CUP_ROUND[x] for x in spec["rounds"]] + [0] * (6 - rounds)],
                    team_seed_list=[{"country": country, "ordinal": ordinal[names[c]]} for c in entrants])
         real = sum(1 for t in ties if t[1])
+        # From the second season (the Mod's 4.0.1, tools/cupsf.py): per division of the
+        # real list, its clubs and how many of them wait for round 2
+        byes = {c for t in ties if not t[1] for c in t if c}
+        quota = collections.OrderedDict()
+        for c in entrants:
+            q = quota.setdefault(division[ordinal[names[c]]], [0, 0])
+            q[0] += 1
+            q[1] += c in byes
         out.append({"slot": slot, "record": rec, "n": len(entrants), "ties": real,
-                    "europe": 0, "flips": flips})
+                    "europe": 0, "flips": flips,
+                    "quota": [(d, n, b) for d, (n, b) in sorted(quota.items())]})
         counts["%s: clubs (byes)" % key] += len(entrants)
         counts["%s: first round byes" % key] += len(ties) - real
     return out
@@ -549,7 +559,8 @@ const TeamPool *World_TeamPools(int32_t *count)
 }
 
 /* The national cups (src/world_cups.c): their records, the clubs in the real bracket's
- * order, round 1's real ties and the later rounds' ties played the other way round. */
+ * order, round 1's real ties and the later rounds' ties played the other way round; from
+ * the second season, per division its clubs and how many of them have a bye. */
 %(cups)s
 
 const WorldCup *World_Cups(int32_t *count)
@@ -658,9 +669,11 @@ def world_data_c(tag, leagues, resized, groups, playoffs, pools, cups):
         cup_tables.append("static " + emit_competitions.emit_cup(dict(rec, id=sym, name=names)))
         cup_tables.append("static const uint16_t %sFlips[] = { %s };" % (
             sym, ", ".join(map(str, c["flips"])) or "0"))
-        cup_entries.append("    { %d, %d, &%s, %d, %d, %d, %d, %sFlips },   /* %s */" % (
+        cup_tables.append("static const uint8_t %sQuota[][3] = { %s };" % (
+            sym, ", ".join("{ %d, %d, %d }" % q for q in c["quota"])))
+        cup_entries.append("    { %d, %d, &%s, %d, %d, %d, %d, %sFlips, %d, %sQuota },   /* %s */" % (
             rec["comp"]["team_number"], c["slot"], sym, c["n"], c["ties"], c["europe"],
-            len(c["flips"]) + 1, sym, rec["id"]))
+            len(c["flips"]) + 1, sym, len(c["quota"]), sym, rec["id"]))
     cup_tables.append("static const WorldCup kWorld%sCups[] = {\n%s\n};" % (tag, "\n".join(cup_entries)))
     cup_cases = ("    case WORLD_%s:\n        *count = %d;\n        return kWorld%sCups;"
                  % (tag, len(cups), tag))

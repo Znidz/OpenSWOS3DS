@@ -15,6 +15,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container: devkitpro/devkitarm:latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Install git
         run: |

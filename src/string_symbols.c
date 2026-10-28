@@ -118,7 +118,9 @@ extern char _aFourthRound[];                  extern char _aGroupA[];           
 extern char _aGroupC[];                       extern char _aGroupD[];                       extern char _aGroupE[];
 extern char _aGroupF[];                       extern char _aGroupG[];                       extern char _aGroupH[];
 extern char _aHigh[];                         extern char _aQF[];                           extern char _aQFinal[];
-extern char _aLast16[];                       extern char _aRoundOf16[];                    extern char _aRnd1[];
+extern char _aLast16[];                       extern char _aRoundOf16[];                    extern char _aRoundOf32[];
+extern char _aRoundOf64[];                    extern char _aPrelimRound[];                  extern char _aLast32[];
+extern char _aLast64[];                       extern char _aPrelim[];                       extern char _aRnd1[];
 extern char _aRnd2[];                         extern char _aRnd3[];                         extern char _aRnd4[];
 extern char _aRnd5[];                         extern char _aRnd6[];                         extern char _aRound1[];
 extern char _aRound2[];                       extern char _aRound3[];                       extern char _aRound4[];
@@ -714,6 +716,12 @@ const StringSymbol _stringSymbols[] = {
     { "_aQFinal", (void *)_aQFinal },
     { "_aLast16", (void *)_aLast16 },
     { "_aRoundOf16", (void *)_aRoundOf16 },
+    { "_aRoundOf32", (void *)_aRoundOf32 },
+    { "_aRoundOf64", (void *)_aRoundOf64 },
+    { "_aPrelimRound", (void *)_aPrelimRound },
+    { "_aLast32", (void *)_aLast32 },
+    { "_aLast64", (void *)_aLast64 },
+    { "_aPrelim", (void *)_aPrelim },
     { "_aRnd1", (void *)_aRnd1 },
     { "_aRnd2", (void *)_aRnd2 },
     { "_aRnd3", (void *)_aRnd3 },

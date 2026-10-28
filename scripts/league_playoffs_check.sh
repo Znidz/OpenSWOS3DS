@@ -13,6 +13,7 @@
 # Then the B-team rules (its sec_post): built cases, and random ones against the Mod's.
 # Then the cups' clubs from the second season (its 4.0.1 cf_build, CF_SEED 1 as released):
 # random moves, last season's places and career clubs, both cups' lists compared.
+# Then the Coppa Italia Serie D table against its cupd.py compile_table.
 # Needs the world's data (bin/data_json/worlds/2627/mod/, not in git): skipped without it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -82,3 +83,27 @@ else
     diff "$OUT/cups_mod.txt" "$OUT/cups_ours.txt" | head -4
     exit 1
 fi
+
+# The Coppa Italia Serie D's table (world_import.py italian_cupd) against the Mod's cupd.py
+# compile_table on the same cupd.json and club mapping.
+python3 -I - "$MOD" <<'PY'
+import csv, json, os, struct, sys
+sys.path.insert(0, 'scripts'); sys.path.insert(1, sys.argv[1] + '/tools')
+import world_import as w
+import cupd
+picked = w.italy()[1]
+ours = w.italian_cupd(picked, 20, None)
+pk = os.path.join(w.MOD, 'packs', 'ita')
+name_of = {r['key']: r['name'] for r in csv.DictReader(open(os.path.join(pk, 'clubs.csv'), encoding='utf-8'))}
+ordinal = {e['team']['team_name']: o for o, (e, _) in enumerate(picked)}
+def word(key):
+    if not key or key not in name_of or name_of[key] not in ordinal:
+        return None
+    return 20 | ordinal[name_of[key]] << 8
+tab, nr, nt = cupd.compile_table(json.load(open(os.path.join(pk, 'cupd.json'), encoding='utf-8')), word)
+mine = b''.join(bytes(r[:6]) + struct.pack('<H', r[6]) for r in ours['rounds'])
+mine += b''.join(struct.pack('<HHBB', a, b, win, 0) for a, b, win in ours['ties'])
+if mine != tab:
+    sys.exit('FAIL: the Coppa Italia Serie D table differs from the Mod\'s compile_table')
+print('PASS: the Coppa Italia Serie D table, %d rounds and %d ties, byte for byte the Mod\'s' % (nr, nt))
+PY

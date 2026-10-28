@@ -189,6 +189,12 @@ extern char _aQF[];
 extern char _aQFinal[];
 extern char _aLast16[];
 extern char _aRoundOf16[];
+extern char _aRoundOf32[];
+extern char _aRoundOf64[];
+extern char _aPrelimRound[];
+extern char _aLast32[];
+extern char _aLast64[];
+extern char _aPrelim[];
 extern char _aQuarterFinal[];
 extern char _aRb[];
 extern char _aRememberUnless[];
@@ -1402,7 +1408,7 @@ void *_divStringTable[4] = {
     _aDiv2,
     _aDiv3,
 };
-void *_cupRoundStringTable[13] = {
+void *_cupRoundStringTable[16] = {
     _aFirstRound,
     _aSecondRound,
     _aThirdRound,
@@ -1416,8 +1422,11 @@ void *_cupRoundStringTable[13] = {
     _aThirdPlacePlay,
     _aFinalGroups,
     _aRoundOf16,             /* 12: a world cup's round of 16 (world_cups.c) */
+    _aRoundOf32,             /* 13: the Coppa Italia Serie D's (world_cupd.c) */
+    _aRoundOf64,             /* 14 */
+    _aPrelimRound,           /* 15 */
 };
-void *_roundStringTable[13] = {
+void *_roundStringTable[16] = {
     _aRound1,
     _aRound2,
     _aRound3,
@@ -1431,6 +1440,9 @@ void *_roundStringTable[13] = {
     _a3rdPlayOff,
     _aFinalGroups_0,
     _aLast16,                /* 12 */
+    _aLast32,                /* 13 */
+    _aLast64,                /* 14 */
+    _aPrelim,                /* 15 */
 };
 void *_rndStringTable[15] = {
     _aRnd1,

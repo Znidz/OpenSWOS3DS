@@ -25,6 +25,7 @@
 #include "team_pool.h"         /* "team_pool" in career saves */
 #include "world_playoff.h"     /* "world_playoff" in career saves */
 #include "world_cups.h"        /* "world_cups" in career saves */
+#include "world_cupd.h"        /* "world_cupd" in career saves */
 #include "comp_identity.h"     /* COMPID_copaLibertadores: an old save's Copa (128) */
 #include "translations.h"   /* tr() — localize competition name symbols */
 
@@ -6058,6 +6059,21 @@ int16_t SaveJson_WriteCareer(uint8_t *filename)
         mjson_printf(json_out_emit, &out, "%s", "]}");
     }
 
+    /* A world's Coppa Italia Serie D (world_cupd.c): the season, the round to come, the
+     * drawn round's pairs, each tie's winner and host. */
+    if (World_CupD()) {
+        const WorldCupDState *d = &g_worldCupD;
+        mjson_printf(json_out_emit, &out, ",\n  %Q:{%Q:%d,%Q:%d,%Q:%d,%Q:[%d,%d,%d,%d],%Q:[", "world_cupd",
+                     "season", (int)d->season, "round", (int)d->round, "drawn", (int)d->drawn,
+                     "drawn_ties", (int)d->sd[0], (int)d->sd[1], (int)d->sd[2], (int)d->sd[3], "results");
+        for (int i = 0; i < WORLD_CUPD_TIES; i++)
+            mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)d->res[i]);
+        mjson_printf(json_out_emit, &out, "],%Q:[", "hosts");
+        for (int i = 0; i < WORLD_CUPD_TIES; i++)
+            mjson_printf(json_out_emit, &out, "%s%d", i ? "," : "", (int)d->home[i]);
+        mjson_printf(json_out_emit, &out, "%s", "]}");
+    }
+
     /* A world's play-off the career club plays (world_playoff.c): which, its clubs (team
      * numbers), their places, points and the round under way, the other groups' tables
      * simulated early, the winner once decided. */
@@ -6546,6 +6562,29 @@ static void apply_semantic_load(const char *src, int src_size)
                 while (i < 256 && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0)
                     if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
                         g_worldCups.place[i++] = (uint8_t)v;
+        }
+    }
+
+    /* A world's Coppa Italia Serie D (world_cupd.c); a save without it: not started. */
+    CupD_Reset();
+    {
+        const char *cd = NULL;
+        int cdlen = 0;
+        if (mjson_find(src, src_size, "$.world_cupd", &cd, &cdlen) == MJSON_TOK_OBJECT) {
+            WorldCupDState *d = &g_worldCupD;
+            long v = 0;
+            const char *arr; int al, pos, voff, vlen, vt, i;
+            if (mjson_get_long(cd, cdlen, "$.season", &v) > 0) d->season = (uint8_t)v;
+            if (mjson_get_long(cd, cdlen, "$.round", &v) > 0) d->round = (uint8_t)v;
+            if (mjson_get_long(cd, cdlen, "$.drawn", &v) > 0) d->drawn = (uint8_t)v;
+            static const char *const keys[3] = { "$.drawn_ties", "$.results", "$.hosts" };
+            uint8_t *const dst[3] = { d->sd, d->res, d->home };
+            const int cap[3] = { 4, WORLD_CUPD_TIES, WORLD_CUPD_TIES };
+            for (int k = 0; k < 3; k++)
+                if (mjson_find(cd, cdlen, keys[k], &arr, &al) == MJSON_TOK_ARRAY)
+                    for (pos = 0, i = 0; i < cap[k] && (pos = fast_array_next(arr, al, pos, &voff, &vlen, &vt)) != 0; )
+                        if (mjson_get_long(arr + voff, vlen, "$", &v) > 0)
+                            dst[k][i++] = (uint8_t)v;
         }
     }
 

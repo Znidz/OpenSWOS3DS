@@ -42,6 +42,7 @@ extern uint16_t _careerSeasonsCompleted;
 #include "team_pool.h"
 #include "world_playoff.h"
 #include "world_cups.h"
+#include "world_cupd.h"
 extern uint16_t _currentSeasonShowing;
 extern uint16_t _seasonTransferQuota;
 extern uint16_t _pendingForeignPlayerCount;
@@ -261,6 +262,7 @@ void ChooseTeamAndStartCareer(void)
      * its cups' first season (world_cups.c). */
     TeamPool_Reset();
     WorldCups_Reset();
+    CupD_Reset();
     _teamsLoaded = 0;
     SelectTeamToManage();
     if (_selectedTeamPtr == 0) {
@@ -647,6 +649,7 @@ void InitCareer(uint16_t teamNo)
     }
     TeamPool_Reset();
     WorldCups_Reset();
+    CupD_Reset();
 
     DIY_LoadLeagueScratchFromTable();
 
@@ -1398,6 +1401,7 @@ void InitializeNewSeason(void)
     FillCareerTeamPlayers();
     Career_InitializeNewSeasonFinances();
     InitializeCareerSeasonFinancials();
+    CupD_SeasonStart();     /* the Coppa Italia Serie D's rounds before the first match (world_cupd.c) */
 
     /* Show appropriate chairman message */
     if (_stayingInOldClub != 0) {
@@ -1686,6 +1690,7 @@ static void Rebuild_CompetitionSlotPointers(void)
         }
     }
     WorldPlayoff_RestoreSlot();     /* a world's play-off under way (world_playoff.c) */
+    CupD_RestoreSlot();             /* a Coppa Italia Serie D tie under way (world_cupd.c) */
 
     /* Slot 3 (quaternary, euro cups) — re-derive from the SAVED euro-cup
      * slot CONTEXT, not from quaternaryCompetitionPtr.

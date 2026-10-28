@@ -13,6 +13,7 @@
 #include "career_teams.h"
 #include "world_playoff.h"
 #include "world_cups.h"
+#include "world_cupd.h"
 #include "translations.h"
 #include "endian_helpers.h"
 #include "game_types.h"
@@ -1629,6 +1630,11 @@ void Career_UpdateCareerFinishedFlag(void)
 __attribute__((used, externally_visible))
 void Career_AdvanceToNextTeamSelectionKeyCacheEntry(void)
 {
+    /* the Coppa Italia Serie D's rounds that have come (world_cupd.c): the entry just
+     * played is the current one */
+    if (_teamSelectionKeyCacheCount)
+        CupD_Step(((TeamSelectionKeyCacheEntry *)(_teamSelectionKeyCache + _teamSelectionKeyCacheOffset))->sortKey);
+
     if (_gameType == 4) {
         _homeMarketUpdateBacklog++;
         _foreignMarketUpdateBacklog++;
@@ -1784,7 +1790,8 @@ void Career_ProcessCurrentCompetitionSlotAfterMatch(void)
          * region = minSubstitutes */
         if (((DIYCompetitionEx *)slotPtr)->minSubstitutes != 0)
             return;
-        if (!WorldPlayoff_CareerLeagueEnded())  /* a world's play-off the club plays (world_playoff.c) */
+        if (!WorldPlayoff_CareerLeagueEnded() &&   /* a world's play-off the club plays (world_playoff.c), */
+            !CupD_InSlot4())                       /* a Coppa Italia Serie D tie's slot (world_cupd.c) */
             DIY_RebuildCompetitionAndTeamSelectionCaches();
     }
 }
@@ -1906,7 +1913,8 @@ void Career_OpenCompetitionSlotMenuAndApplyChanges(uint16_t d2)
         return;
     if (((DIYCompetitionEx *)slotPtr)->minSubstitutes != 0)
         return;
-    if (!WorldPlayoff_CareerLeagueEnded())      /* a world's play-off the club plays (world_playoff.c) */
+    if (!WorldPlayoff_CareerLeagueEnded() &&    /* a world's play-off the club plays (world_playoff.c), */
+        !CupD_InSlot4())                        /* a Coppa Italia Serie D tie's slot (world_cupd.c) */
         DIY_RebuildCompetitionAndTeamSelectionCaches();
 }
 

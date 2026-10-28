@@ -8,6 +8,7 @@
  */
 #include "world_playoff.h"
 #include "world_cups.h"
+#include "world_cupd.h"
 #include "league_playoffs.h"
 #include "league_groups.h"
 #include "game_types.h"
@@ -539,8 +540,8 @@ int32_t WorldPlayoff_CareerLeagueEnded(void)
     const LeaguePlayoffs *all = World_LeaguePlayoffs(&count), *lp = 0;
     if (g_worldPlayoff.kind)
         return 1;                               /* (built already: slot 4 is ours) */
-    if (_diyCompetitionPtr)
-        return 0;                               /* (slot 4 is 96/97's) */
+    if (_diyCompetitionPtr && CupD_InSlot4() != 1)
+        return 0;                               /* (slot 4 is 96/97's; a decided Coppa D tie gives way) */
     for (int32_t i = 0; i < count; i++)
         if (all[i].country == _careerTeam.team.countryNumber)
             lp = &all[i];

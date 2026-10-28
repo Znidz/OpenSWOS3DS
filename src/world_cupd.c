@@ -1,0 +1,406 @@
+/*
+ * world_cupd.c -- the Coppa Italia Serie D (include/world_cupd.h; docs/WORLD_2026_27.md,
+ * phase 4). A port of the SWOS 96/97 Mod's tools/gplay.c cd_* (MIT, Davide Lorigliola).
+ */
+#include "game_types.h"
+#include "swos_types.h"
+#include "world_cupd.h"
+#include "world_cups.h"
+#include "team_pool.h"
+#include "world_playoff.h"
+#include "diy_competition.h"
+#include "career_teams.h"
+#include "career_status.h"
+#include "endian_helpers.h"
+
+extern uint8_t _diyLeagueSeasonStateTable[];
+extern uint16_t _teamsCountryNumbers[];
+extern TeamFileEx _careerTeam;
+extern DIYCompetitionEx _diyCompetitionStart;
+extern CompetitionSlotBuffer _diyCompetitionContextBuf;
+extern CompetitionSlotBuffer _primaryCompetitionBuf;
+extern uint8_t *_diyCompetitionPtr;
+extern uint32_t *_diyCompetitionTablePtr;
+extern uint16_t _competitionSlotUpdatedFlag;
+extern uint16_t _teamSelectionKeyCacheCount;
+extern uint8_t _teamSelectionKeyCache[];
+extern Playoffs _div1Playoffs;
+extern void Career_SetCurrentCompetitionSlot(uint8_t *comp, uint16_t slot, uint16_t divisionIndex,
+                                             uint16_t hasSelectedTeams);
+extern void Career_LoadCompetitionSlotStateFromBuffer(uint8_t *slot);
+extern void Career_StoreCompetitionSlotStateToBuffer(uint8_t *slot);
+extern void DIY_BuildTeamSelectionPointerCache(void);
+extern void DIY_UpdateCompetitionProgressOrAdvanceSlot(uint8_t *blk);
+
+/* The tie's competition id: a free one (comp_identity.h: 162..255; the play-off has 200). */
+#define COMPID_worldCupD 201
+
+static CompetitionCup s_rec;
+
+WorldCupDState g_worldCupD;
+
+#define CD_REF(i) ((uint16_t)((i) << 8 | 0xFF))     /* (a tie as a side: a file is never 255) */
+#define CD_ISREF(v) (((v) & 0xFF) == 0xFF)
+#define CD_DRAWN 0xFEFF
+
+/* The Mod's generator (gplay.c rng / below / cd_below). */
+static uint32_t s_rng;
+static uint32_t below(uint32_t n)
+{
+    s_rng = s_rng * 1103515245u + 12345u;
+    return ((s_rng >> 16) * n) >> 16;
+}
+static uint32_t cd_below(uint32_t n)
+{
+    s_rng = s_rng * 1103515245u + 12345u;
+    return (uint32_t)(((uint64_t)(s_rng >> 16) * n) >> 16);
+}
+
+void CupD_Reset(void)
+{
+    uint8_t *p = (uint8_t *)&g_worldCupD;
+    for (uint32_t i = 0; i < sizeof g_worldCupD; i++)
+        p[i] = 0;
+}
+
+/* The Mod's season byte (GP_SEAS: the year from 1900) -- its generator's seeds. */
+static uint32_t gp_seas(void)
+{
+    return 126u + g_worldCups.seasons;
+}
+
+static int32_t first_season(void)
+{
+    return g_worldCups.seasons == 0;
+}
+
+static int32_t cd_n(const WorldCupD *c, int32_t r)
+{
+    return c->round[r][4];
+}
+
+static int32_t cd_first(const WorldCupD *c, int32_t r)
+{
+    return c->round[r][6] | c->round[r][7] << 8;
+}
+
+static uint16_t cd_raw(const WorldCupD *c, int32_t t, int32_t sd)
+{
+    return (uint16_t)(c->tie[t][2 * sd] | c->tie[t][2 * sd + 1] << 8);
+}
+
+/* tie t's side sd (0 a, 1 b): a team word, 0 (off-file), FFFFh undecided */
+static uint16_t cd_side(const WorldCupD *c, int32_t t, int32_t sd)
+{
+    const uint16_t v = cd_raw(c, t, sd);
+    if (!CD_ISREF(v))
+        return v;
+    int32_t i = v >> 8;
+    if (v == CD_DRAWN) {                /* (a drawn round: its k-th tie = the previous round's sd[2k], sd[2k + 1]) */
+        /* (from ITS round's first tie: gplay.c takes the round under way's, so once the next
+         * round is, a drawn round's winners are read below sd -- the hosts of the first ties --
+         * and its final is played by two of the preliminary round's clubs) */
+        int32_t r = 0;
+        while (r + 1 < c->rounds && t >= cd_first(c, r + 1))
+            r++;
+        i = g_worldCupD.sd[2 * (t - cd_first(c, r)) + sd];
+    }
+    if (i >= c->ties || !g_worldCupD.res[i])
+        return 0xFFFF;
+    return cd_side(c, i, g_worldCupD.res[i] - 1);
+}
+
+static int32_t cd_hosted(const WorldCupD *c, int32_t t, uint16_t club)
+{
+    return cd_side(c, t, g_worldCupD.home[t]) == club;
+}
+
+/* A club's strength: the best 11's prices of the identity its slot has (team_pool.h),
+ * squared (gplay.c cd_str). */
+static uint32_t cd_str(const WorldCupD *c, uint16_t w)
+{
+    const int32_t i = w >> 8;
+    int32_t id = i;
+    if (g_teamPool.init && g_teamPool.country == c->country && g_teamPool.map[i])
+        id = g_teamPool.map[i] - 1;
+    uint32_t v = id < 256 ? c->strength[id] : id - 256 < c->pool ? c->poolStrength[id - 256] : 5;
+    if (v < 5)
+        v = 5;
+    return v * v;
+}
+
+/* A tie nobody plays, by strength (the Mod's statesim): h 0 a hosts (the first leg), 1 b;
+ * 1 a through, 2 b. */
+static int32_t cd_sim(const WorldCupD *c, uint16_t a, uint16_t b, int32_t legs, int32_t h)
+{
+    const uint32_t sa = cd_str(c, a), sb = cd_str(c, b);
+    int32_t ga = 0, gb = 0;
+    for (int32_t l = 0; l < legs; l++) {
+        const int32_t homeA = (l == 0) == (h == 0);
+        const uint32_t x = homeA ? sa * 121 / 100 : sa, y = homeA ? sb : sb * 121 / 100;
+        int32_t p, q;
+        if (cd_below(100) < 26) {
+            p = (int32_t)cd_below(3);
+            q = p;
+        } else {
+            const int32_t win = cd_below(x + y) < x, gw = 1 + (int32_t)cd_below(3), gl = (int32_t)cd_below((uint32_t)gw);
+            p = win ? gw : gl;
+            q = win ? gl : gw;
+        }
+        ga += p;
+        gb += q;
+    }
+    if (ga != gb)
+        return ga > gb ? 1 : 2;
+    return cd_below(3 * (sa + sb)) < 2 * sa + sb ? 1 : 2;
+}
+
+/* The career club as the cup's team words are. */
+static uint16_t career_word(void)
+{
+    return (uint16_t)(_careerTeam.team.countryNumber | _careerTeam.team.teamOrdinal << 8);
+}
+
+/* Tie t's host: 0 a, 1 b -- listed, drawn, or alternate (the club away in its previous tie
+ * hosts; both home / both away: drawn), as gplay.c cd_step_c (the generator seeded). */
+static int32_t host_of(const WorldCupD *c, int32_t t, int32_t host, uint16_t a, uint16_t b)
+{
+    const uint16_t ra = cd_raw(c, t, 0), rb = cd_raw(c, t, 1);
+    if (host == 2)
+        return (int32_t)below(2);
+    if (host == 4) {
+        const int32_t pa = CD_ISREF(ra) && ra != CD_DRAWN ? ra >> 8 : -1;
+        const int32_t pb = CD_ISREF(rb) && rb != CD_DRAWN ? rb >> 8 : -1;
+        const int32_t ha = pa >= 0 && pa < c->ties && cd_hosted(c, pa, a);
+        const int32_t hb = pb >= 0 && pb < c->ties && cd_hosted(c, pb, b);
+        return ha && !hb ? 1 : !ha && hb ? 0 : (int32_t)below(2);
+    }
+    return 0;
+}
+
+/* The earliest week a tie built now can be played (the next entry's; at the season start
+ * any: the rounds before its first entry keep their weeks). */
+static uint16_t s_floor;
+
+/* The tie's record (as the play-off's, world_playoff.c): one tie, its weeks, its legs; level:
+ * penalties, no extra time (the Mod's LV_PENS). */
+static void make_record(const WorldCupD *c)
+{
+    const WorldCupDState *s = &g_worldCupD;
+    uint8_t *z = (uint8_t *)&s_rec;
+    for (uint32_t i = 0; i < sizeof s_rec; i++)
+        z[i] = 0;
+    s_rec.header.comp = _div1Playoffs.comp;
+    s_rec.header.comp.compId = (uint8_t)COMPID_worldCupD;
+    s_rec.header.comp.teamNumber = (int8_t)c->country;          /* ("ITALIAN ...") */
+    s_rec.header.comp.isPlayoff = 0;
+    s_rec.header.comp.reserved1 = 15;
+    s_rec.header.comp.reserved2 = 21;
+    s_rec.header.comp.seedReorderFlag = 1;                      /* (the clubs as listed) */
+    s_rec.header.comp.beginMonth = (int8_t)s->d1;
+    s_rec.header.comp.endMonth = (int8_t)(s->legs == 2 ? s->d2 : s->d1);
+    s_rec.header.teams = 2;
+    s_rec.header.awayGoalsMode = 0;
+    s_rec.header.subsAndPointsForWin = _div1Playoffs.subsAndMaxSubs;
+    s_rec.header.roundStringBase = 1;
+    s_rec.roundRuleFlags[0] = (int8_t)(s->legs == 2 ? 0x84 : 0x04);
+    s_rec.name[0] = c->name[0];
+    s_rec.name[1] = c->name[1];
+    s_rec.teamSeedList[0].countryNumber = (uint8_t)(s->teamA >> 8);
+    s_rec.teamSeedList[0].teamOrdinal = (uint8_t)s->teamA;
+    s_rec.teamSeedList[1].countryNumber = (uint8_t)(s->teamB >> 8);
+    s_rec.teamSeedList[1].teamOrdinal = (uint8_t)s->teamB;
+}
+
+/* The career club's tie t into slot 4 (the play-off's steps, world_playoff.c). */
+static void build_tie(const WorldCupD *c, int32_t t, uint16_t a, uint16_t b, uint16_t week)
+{
+    WorldCupDState *s = &g_worldCupD;
+    const uint8_t *rec = c->round[g_worldCupD.round];
+    const int32_t w1 = rec[0], w2 = rec[1];
+    const uint16_t home = s->home[t] ? b : a, away = s->home[t] ? a : b;
+    s->built = 1;
+    s->bt = (uint8_t)t;
+    s->legs = rec[2];
+    (void)week;
+    s->d1 = (uint8_t)(w1 >= s_floor ? w1 : s_floor);
+    s->d2 = (uint8_t)(s->legs == 2 ? (w2 > s->d1 ? w2 : s->d1 + 1) : s->d1);
+    s->teamA = (uint16_t)((home & 0xFF) << 8 | home >> 8);       /* (team words -> {country, ordinal}) */
+    s->teamB = (uint16_t)((away & 0xFF) << 8 | away >> 8);
+    make_record(c);
+    _diyCompetitionTablePtr = (uint32_t *)0;
+    Career_SetCurrentCompetitionSlot((uint8_t *)&s_rec, 4, 0, 0);
+    {
+        uint8_t *ctx = (uint8_t *)&_diyCompetitionContextBuf;
+        uint16_t ids[2];
+        BE_WRITE_U16(&ids[0], s->teamA);
+        BE_WRITE_U16(&ids[1], s->teamB);
+        AppendTeamsToSelectionFromTmdOrTeamFile(((DIYCompetitionEx *)ctx)->cupTeamIds, ids, 2);
+        Career_LoadCompetitionSlotStateFromBuffer(ctx);
+        DIY_BuildTeamSelectionPointerCache();
+        DIY_UpdateCompetitionProgressOrAdvanceSlot((uint8_t *)&_diyCompetitionStart);
+        Career_StoreCompetitionSlotStateToBuffer(ctx);
+        _competitionSlotUpdatedFlag = 1;
+        _diyCompetitionContextBuf.tourn.header.slotStateA = _primaryCompetitionBuf.tourn.header.slotStateA;
+        _diyCompetitionContextBuf.tourn.header.slotStateB = _primaryCompetitionBuf.tourn.header.slotStateB;
+        _diyCompetitionContextBuf.tourn.header.slotStateC = _primaryCompetitionBuf.tourn.header.slotStateC;
+    }
+    SWOS_DBG("[world-cupd] round %d tie %d, the career club's: %04X v %04X, weeks %u-%u\n",
+             (int)g_worldCupD.round, (int)t, (unsigned)s->teamA, (unsigned)s->teamB,
+             (unsigned)s->d1, (unsigned)s->d2);
+}
+
+/* Slot 4 can take the tie: free, or the cup's own last tie (decided). */
+static int32_t slot4_free(void)
+{
+    return !g_worldPlayoff.kind && (!_diyCompetitionPtr || _diyCompetitionPtr == (uint8_t *)&s_rec);
+}
+
+static void step(uint16_t week);
+
+void CupD_Step(uint16_t week)
+{
+    s_floor = (uint16_t)(week + 1);
+    step(week);
+}
+
+static void step(uint16_t week)
+{
+    const WorldCupD *c = World_CupD();
+    WorldCupDState *s = &g_worldCupD;
+    if (!c)
+        return;
+    if (s->season != (uint8_t)(g_worldCups.seasons + 1)) {     /* (a new season: the cup from its start) */
+        CupD_Reset();
+        s->season = (uint8_t)(g_worldCups.seasons + 1);
+    }
+    const uint16_t mgr = career_word();
+    if (s->built)
+        return;                                         /* (its tie first) */
+    while (s->round < c->rounds) {
+        const int32_t r = s->round;
+        const uint8_t *rec = c->round[r];
+        const int32_t w1 = rec[0], legs = rec[2], host = rec[3], n = cd_n(c, r), first = cd_first(c, r);
+        if ((int32_t)week + 1 < w1) {
+            /* not come yet: the career club's tie built ahead when its clubs are known */
+            for (int32_t q = 0; q < n && slot4_free(); q++) {
+                const int32_t t = first + q;
+                const uint16_t a = cd_side(c, t, 0), b = cd_side(c, t, 1);
+                if (!s->res[t] && (a == mgr || b == mgr) && a && b && a != 0xFFFF && b != 0xFFFF &&
+                    !(rec[5] & 1)) {
+                    s_rng = gp_seas() * 7919u + (uint32_t)r * 131u + (uint32_t)t;
+                    s->home[t] = (uint8_t)host_of(c, t, host, a, b);
+                    build_tie(c, t, a, b, week);
+                    return;
+                }
+            }
+            return;
+        }
+        s_rng = gp_seas() * 7919u + (uint32_t)r * 131u + (uint32_t)first;
+        if ((rec[5] & 1) && s->drawn != r + 1) {        /* (the pairs drawn: the previous round's ties) */
+            const int32_t pf = cd_first(c, r - 1), pn = cd_n(c, r - 1);
+            for (int32_t i = 0; i < 4 && i < pn; i++)
+                s->sd[i] = (uint8_t)(pf + i);
+            for (int32_t i = (pn < 4 ? pn : 4) - 1; i > 0; i--) {
+                const int32_t j = (int32_t)below((uint32_t)i + 1);
+                const uint8_t x = s->sd[i];
+                s->sd[i] = s->sd[j];
+                s->sd[j] = x;
+            }
+            s->drawn = (uint8_t)(r + 1);
+        }
+        for (int32_t q = 0; q < n; q++) {
+            const int32_t t = first + q;
+            if (s->res[t])
+                continue;
+            const uint16_t a = cd_side(c, t, 0), b = cd_side(c, t, 1);
+            const int32_t h = host_of(c, t, host, a, b);    /* (0: a hosts, 1: b hosts) */
+            s->home[t] = (uint8_t)h;
+            if ((a == mgr || b == mgr) && a && b && a != 0xFFFF && b != 0xFFFF && slot4_free()) {
+                build_tie(c, t, a, b, week);                    /* (the career club's: played) */
+                return;
+            }
+            int32_t w = first_season() ? c->tie[t][4] : 0;      /* (the real result, the first season) */
+            if (!w)
+                w = !a ? 2 : !b ? 1 : cd_sim(c, a, b, legs, h);
+            s->res[t] = (uint8_t)w;
+            if (a == mgr || b == mgr)
+                SWOS_DBG("[world-cupd] round %d tie %d: %04X v %04X, the career club's, won by %s\n",
+                         (int)r, (int)t, (unsigned)a, (unsigned)b, w == 1 ? "a" : "b");
+        }
+        s->round = (uint8_t)(r + 1);
+        SWOS_DBG("[world-cupd] round %d decided (week %u)\n", (int)r, (unsigned)week);
+    }
+    if (s->round == c->rounds && c->rounds) {
+        const int32_t f = cd_first(c, c->rounds - 1);
+        SWOS_DBG("[world-cupd] won by %04X\n", (unsigned)cd_side(c, f, s->res[f] - 1));
+        s->round++;                                     /* (logged once) */
+    }
+}
+
+void CupD_SeasonStart(void)
+{
+    if (!World_CupD() || !_teamSelectionKeyCacheCount)
+        return;
+    const uint8_t first = ((TeamSelectionKeyCacheEntry *)_teamSelectionKeyCache)->sortKey;
+    s_floor = 0;
+    step((uint16_t)(first ? first - 1 : 0));
+}
+
+void CupD_TieDecided(uint16_t team1, uint16_t team2, int32_t team2Won)
+{
+    const WorldCupD *c = World_CupD();
+    WorldCupDState *s = &g_worldCupD;
+    if (!c || !s->built || (uint8_t)_diyCompetitionStart.base.field_2E != COMPID_worldCupD ||
+        !((team1 == s->teamA && team2 == s->teamB) || (team1 == s->teamB && team2 == s->teamA)))
+        return;
+    const uint16_t w = team2Won ? team2 : team1;
+    const uint16_t word = (uint16_t)((w >> 8) | (w & 0xFF) << 8);
+    s->res[s->bt] = (uint8_t)(cd_side(c, s->bt, 0) == word ? 1 : 2);
+    s->built = 0;
+    SWOS_DBG("[world-cupd] the career club's tie %d: won by %04X\n", (int)s->bt, (unsigned)w);
+}
+
+int32_t CupD_InSlot4(void)
+{
+    return _diyCompetitionPtr == (uint8_t *)&s_rec ? (g_worldCupD.built ? 2 : 1) : 0;
+}
+
+void CupD_RestoreSlot(void)
+{
+    const WorldCupD *c = World_CupD();
+    if (!c || !g_worldCupD.built)
+        return;
+    make_record(c);
+    _diyCompetitionPtr = (uint8_t *)&s_rec;
+    _diyCompetitionTablePtr = (uint32_t *)0;
+}
+
+int32_t CupD_RoundStringIndex(uint8_t compId)
+{
+    const WorldCupD *c = World_CupD();
+    if (!c || compId != COMPID_worldCupD)
+        return -1;
+    /* by the ties of the round under way: 1 final, 2 semi, 4 quarter, 8 round of 16, 16 of
+     * 32, 32 of 64; before them the first round, the preliminary */
+    const int32_t r = g_worldCupD.round < c->rounds ? g_worldCupD.round : c->rounds - 1;
+    switch (cd_n(c, r)) {
+    case 1:  return 8;
+    case 2:  return 7;
+    case 4:  return 6;
+    case 8:  return 12;
+    case 16: return 13;
+    case 32: return 14;
+    default: return r == 0 ? 15 : 0;
+    }
+}
+
+int32_t CupD_Member(uint8_t country, uint8_t ordinal)
+{
+    const WorldCupD *c = World_CupD();
+    if (!c || country != c->country || c->base[ordinal] == 0xFF)
+        return 0;
+    const uint16_t glob = (uint16_t)(_teamsCountryNumbers[country] + ordinal);
+    const int32_t dv = c->base[ordinal] + (int8_t)_diyLeagueSeasonStateTable[glob];
+    return dv >= c->first && dv < c->first + c->groups;
+}

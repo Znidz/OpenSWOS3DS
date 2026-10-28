@@ -17,6 +17,7 @@
 #include "fixture_rounds.h"
 #include "world_playoff.h"
 #include "world_cups.h"
+#include "world_cupd.h"
 #include "string_utils.h"
 #include "random.h"
 #include "deterministic.h"
@@ -10599,6 +10600,9 @@ setDecisive:
         WorldCups_TieDecided(PACK_BE_U16(team1->team.countryNumber, team1->team.teamOrdinal),
                              PACK_BE_U16(team2->team.countryNumber, team2->team.teamOrdinal),
                              d7 & 1);
+        CupD_TieDecided(PACK_BE_U16(team1->team.countryNumber, team1->team.teamOrdinal),
+                        PACK_BE_U16(team2->team.countryNumber, team2->team.teamOrdinal),
+                        d7 & 1);
     }
 
 careerUpdate:

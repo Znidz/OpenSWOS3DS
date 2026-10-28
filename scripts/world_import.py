@@ -452,6 +452,120 @@ def italian_cups(picked, country):
     return out
 
 
+MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+CUPD_HOST = {"listed": 0, "drawn": 2, "alternate": 4}
+CUPD_DRAWN = 0xFEFF
+CUPD_MAXT = 168             # (gplay.c CDT)
+
+
+def week_of(date):
+    """'dd/mm' (or 'dd/mm+1': the next calendar year) -> the career calendar's week: 8 a
+    month from January of the season's first year, 96 a year (the Mod's split.week_of; the
+    competitions' begin and end bytes, the calendar's keys)."""
+    d, m = date.split("+")[0].split("/")
+    y = int(date.split("+")[1]) if "+" in date else 0
+    d, m = int(d), int(m)
+    return 96 * y + 8 * (m - 1) + (d - 1) * 8 // MONTH_DAYS[m - 1]
+
+
+def cupd_table(d, word):
+    """The Coppa Italia Serie D's rounds and ties (the Mod's tools/cupd.py compile_table, as
+    it is): per round its weeks, legs, host rule (0 listed, 2 drawn, 4 alternate), ties,
+    flags (1 drawn pairs, 2 penalties without extra time) and first tie; per tie its sides --
+    a team word (file | ordinal << 8), a previous round's tie (index << 8 | FFh), drawn
+    (FEFFh), 0 a club outside the file -- and its real winner (1, 2; 0 unknown)."""
+    def ref(i):
+        assert 0 <= i < 0xFE, i
+        return i << 8 | 0xFF
+
+    def weeks(date):
+        ds = [x for x in str(date).split() if "/" in x and x[0].isdigit()]
+        ws = [week_of(x.strip(",")) for x in ds[:2]]
+        return ws + [0] * (2 - len(ws))
+
+    rounds, ties, nprev = [], [], 0
+    for ri, r in enumerate(d["rounds"]):
+        ms = list(r.get("matches") or [])
+        w1, w2 = weeks(r.get("date", ""))
+        legs = r.get("legs", 1)
+        draw = r.get("pairing") == "draw"
+        n = len(ms) if ri < 2 else nprev // 2       # (rounds 0-1 as listed, then halving)
+        first, used = len(ties), set()
+        for m in ms:
+            for side in ("home", "away"):
+                f = m.get(side + "_from")
+                if f:
+                    used.add(int(f[1:]))
+        free = [i for i in range(nprev) if i not in used] if ri else []
+        for k in range(n):
+            if k < len(ms) and not draw:
+                m = ms[k]
+                ab = []
+                for side in ("home", "away"):
+                    f, key = m.get(side + "_from"), m.get(side + "_key")
+                    ab.append(ref(int(f[1:]) + (first - nprev)) if f and ri else (word(key) or 0))
+                win = 0
+                if m.get("played") and m.get("winner") is not None:
+                    win = 1 if m["winner"] == m.get("home") else 2 if m["winner"] == m.get("away") else 0
+                ties.append((ab[0], ab[1], win))
+            else:                   # (a tie the source leaves out / a drawn round)
+                if draw:
+                    a = b = CUPD_DRAWN
+                else:
+                    a, b = ref(free.pop(0) + first - nprev), ref(free.pop(0) + first - nprev)
+                ties.append((a, b, 0))
+        if r.get("legs", 1) == 2 and not w2:
+            w2 = w1 + 2
+        flags = (1 if draw else 0) | (2 if "pens" in str(r.get("rule", "pens")) else 0)
+        rounds.append((w1, w2 if legs == 2 else 0, legs, CUPD_HOST.get(r.get("host", "drawn"), 2), n, flags, first))
+        nprev = n
+    assert len(ties) <= CUPD_MAXT, len(ties)
+    return rounds, ties
+
+
+def italian_cupd(picked, country, pool_ids):
+    """The Coppa Italia Serie D (the pack's cupd.json, the Mod's gplay.c cd_*): its table, the
+    Serie D level (first division, groups), each ordinal's base division, and the strengths of
+    the ties nobody plays (the best 11 players' prices, players.csv: the file's 256 ordinals,
+    then the pool's clubs in its order)."""
+    pk = os.path.join(MOD, "packs", "ita")
+    d = json.load(open(os.path.join(pk, "cupd.json"), encoding="utf-8"))
+    clubs = list(csv.DictReader(open(os.path.join(pk, "clubs.csv"), encoding="utf-8")))
+    name_of = {r["key"]: r["name"] for r in clubs}
+    ordinal = {e["team"]["team_name"]: o for o, (e, _) in enumerate(picked)}
+
+    def word(key):              # (a club of the league's file; the pool's are off-file: 0)
+        if not key or key not in name_of or name_of[key] not in ordinal:
+            return None
+        return country | ordinal[name_of[key]] << 8
+    rounds, ties = cupd_table(d, word)
+    prices = collections.defaultdict(list)
+    for r in csv.DictReader(open(os.path.join(pk, "players.csv"), encoding="utf-8")):
+        prices[r["club"]].append(int(r.get("price") or 0))
+
+    def strength(key):
+        return max(5, min(0xFFFF, sum(sorted(prices.get(key, []), reverse=True)[:11])))
+    key_of = {name_of[k]: k for k in name_of}
+    st = [5] * 256
+    for o, (e, _) in enumerate(picked):
+        k = key_of.get(e["team"]["team_name"])
+        if k:
+            st[o] = strength(k)
+    pool_names = [t["team"]["team_name"] for t in json.load(open(os.path.join(MOD, "teams", "ITA_POOL.json"),
+                                                                   encoding="utf-8"))["teams"]]
+    pst = [strength(key_of[n]) if n in key_of else 5 for n in pool_names]
+    mod = mod_league()
+    par = mod["parallel"]
+    df, dc = par[-1]["first"], par[-1]["count"]
+    base = [div for _, div in picked] + [0xFF] * (256 - len(picked))
+    nd = sum(1 for b in base if df <= b < df + dc)
+    assert 2 << (len(rounds) - 2) < nd <= (2 << (len(rounds) - 2)) + 41, (nd, len(rounds))
+    names = (d.get("names") or {}).get("*") or ["COPPA ITALIA SERIE D", "COPPA SERIE D"]
+    counts["Coppa Italia Serie D: rounds, ties"] = len(rounds) * 1000 + len(ties)
+    return {"country": country, "rounds": rounds, "ties": ties, "first": df, "groups": dc, "base": base,
+            "strength": st, "pool_strength": pst, "names": names}
+
+
 def team_file_binary(teams):
     """The binary TEAM.nnn of a team file, as scripts/emit_teams.py makes 96/97's."""
     return tf.dict_filename(teams), tf.rnc_pack(tf.dict_to_blob(teams), tf.dict_rnc_method(teams))
@@ -475,6 +589,7 @@ WORLD_DATA_C = """/*
 #include "team_pool.h"
 #include "fixture_rounds.h"
 #include "world_cups.h"
+#include "world_cupd.h"
 
 %(externs)s
 
@@ -572,6 +687,19 @@ const WorldCup *World_Cups(int32_t *count)
         return 0;
     }
 }
+
+/* The Coppa Italia Serie D (src/world_cupd.c): its rounds and ties as the Mod's cupd.py
+ * compiles them, the Serie D level, each ordinal's base division, the strengths. */
+%(cupd)s
+
+const WorldCupD *World_CupD(void)
+{
+    switch (World_Current()) {
+%(cupd_cases)s
+    default:
+        return 0;
+    }
+}
 """
 
 
@@ -579,7 +707,7 @@ def c_string(text):
     return '"%s"' % text.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def world_data_c(tag, leagues, resized, groups, playoffs, pools, cups):
+def world_data_c(tag, leagues, resized, groups, playoffs, pools, cups, cupd):
     externs, strings, records, installs = set(), [], [], []
     symbols = {}
 
@@ -677,13 +805,41 @@ def world_data_c(tag, leagues, resized, groups, playoffs, pools, cups):
     cup_tables.append("static const WorldCup kWorld%sCups[] = {\n%s\n};" % (tag, "\n".join(cup_entries)))
     cup_cases = ("    case WORLD_%s:\n        *count = %d;\n        return kWorld%sCups;"
                  % (tag, len(cups), tag))
+    cd_tables, cd_cases = [], ""
+    if cupd:
+        sym = "kWorld%sCupD" % tag
+        names = []
+        for n in cupd["names"]:
+            if n not in symbols:
+                strings.append("static char %s[] = %s;" % (symbol(n), c_string(n)))
+            names.append(symbols[n])
+
+        def rows(data, per):
+            return "\n".join("    " + ", ".join(map(str, data[i:i + per])) + "," for i in range(0, len(data), per))
+        rb = []
+        for w1, w2, legs, host, n, flags, first in cupd["rounds"]:
+            rb.append("    { %d, %d, %d, %d, %d, %d, %d, %d }," % (w1, w2, legs, host, n, flags, first & 0xFF, first >> 8))
+        cd_tables.append("static const uint8_t %sRounds[][8] = {\n%s\n};" % (sym, "\n".join(rb)))
+        tb = []
+        for a, b, win in cupd["ties"]:
+            tb.append("    { %d, %d, %d, %d, %d, 0 }," % (a & 0xFF, a >> 8, b & 0xFF, b >> 8, win))
+        cd_tables.append("static const uint8_t %sTies[][6] = {\n%s\n};" % (sym, "\n".join(tb)))
+        cd_tables.append("static const uint8_t %sBase[256] = {\n%s\n};" % (sym, rows(cupd["base"], 32)))
+        cd_tables.append("static const uint16_t %sStrength[256] = {\n%s\n};" % (sym, rows(cupd["strength"], 16)))
+        cd_tables.append("static const uint16_t %sPoolStrength[] = {\n%s\n};" % (sym, rows(cupd["pool_strength"], 16)))
+        cd_tables.append("static const WorldCupD %s = {\n    %d, %d, %sRounds, %d, %sTies, %d, %d, %sBase, %sStrength,\n"
+                         "    %d, %sPoolStrength, { %s, %s }\n};" % (
+            sym, cupd["country"], len(cupd["rounds"]), sym, len(cupd["ties"]), sym, cupd["first"], cupd["groups"],
+            sym, sym, len(cupd["pool_strength"]), sym, names[0], names[1]))
+        cd_cases = "    case WORLD_%s:\n        return &%s;" % (tag, sym)
     return WORLD_DATA_C % {"externs": "\n".join(sorted(externs)),
                            "records": "\n\n".join(strings + records), "cases": cases,
                            "globals": GLOBAL_TEAM_NUMBERS,
                            "groups": "\n\n".join(group_tables), "group_cases": group_cases,
                            "playoffs": "\n\n".join(po_tables), "po_cases": po_cases,
                            "pools": "\n\n".join(pool_tables), "pool_cases": pool_cases,
-                           "cups": "\n\n".join(cup_tables), "cup_cases": cup_cases}
+                           "cups": "\n\n".join(cup_tables), "cup_cases": cup_cases,
+                           "cupd": "\n\n".join(cd_tables), "cupd_cases": cd_cases}
 
 
 def write(path, data):
@@ -716,7 +872,7 @@ def main():
         f.write(world_data_c("2627", leagues, [(country, teams["count"])],
                              [italian_groups(picked, country, leagues)],
                              [italian_playoffs(country, leagues, picked)], [pool_info],
-                             italian_cups(picked, country)))
+                             italian_cups(picked, country), italian_cupd(picked, country, None)))
     print("wrote src/world_data.c")
     for what, n in sorted(counts.items()):
         print("  %-52s %d" % (what, n))

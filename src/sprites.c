@@ -3,6 +3,7 @@
  * SWOS Amiga C/68000 Reversed by Ben Baker (https://github.com/benbaker76)
  * SWOS DOS Reversed by Zlatko Karakaš (https://github.com/zlatkok)
  */
+#include "stereo.h"
 #include "sprites.h"
 #include "math68k.h"
 #include "game_types.h"
@@ -943,6 +944,8 @@ static void blitChunkySprite(SpriteGraphics *a0, int16_t dstX, int16_t dstY)
             uint8_t src = srcRow[px];
             if (src) dstRow[dx] = src;
         }
+        if (g_stereoOn)
+            Stereo_MarkRow(dstBase, dy, dstX, srcRow, sprW);
     }
 }
 #endif
@@ -2106,6 +2109,10 @@ void DrawQueuedSprites(void)
         SpriteGraphics *a0 = *(SpriteGraphics **)a2;
         a2 -= sizeof(Sprite *);
         Sprite *a4 = *(Sprite **)a2;
+#ifdef SWOS_SDL_BUILD
+        if (g_stereoOn)
+            Stereo_BeginSprite(a4, a0);     /* the depth its pixels get (stereo.h) */
+#endif
 
         /* Check if highlight recording needed */
         if (a4->teamNumber != 0) {
@@ -2172,6 +2179,10 @@ void DrawQueuedSprites(void)
             _frontbufferBasePtr = savedFbBase;
 #endif
     }
+#ifdef SWOS_SDL_BUILD
+    if (g_stereoOn)
+        Stereo_BeginSprite(NULL, NULL);
+#endif
 }
 
 /* ================================================================

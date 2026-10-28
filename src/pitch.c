@@ -3,6 +3,7 @@
  * SWOS Amiga C/68000 Reversed by Ben Baker (https://github.com/benbaker76)
  * SWOS DOS Reversed by Zlatko Karakaš (https://github.com/zlatkok)
  */
+#include "stereo.h"
 #include "pitch.h"
 #include "game_types.h"
 #include "display.h"
@@ -979,5 +980,7 @@ void DrawChunkyPitch(void)
             }
         }
     }
+    if (g_stereoOn)
+        Stereo_PitchDrawn(fb);      /* the pitch plane the 3D view shifts (stereo.h) */
 }
 #endif

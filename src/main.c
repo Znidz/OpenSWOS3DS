@@ -59,6 +59,8 @@
 #include "netplay_match.h"      /* --netplay-match */
 #include "rollback_rig.h"       /* --rollback */
 #include "world.h"              /* [general] world */
+#include "stereo.h"             /* the stereoscopic view (3DS, SWOS_STEREO) */
+#include "n3ds.h"               /* the Nintendo 3DS */
 
 #define WIN_SCALE 3
 
@@ -355,6 +357,12 @@ int main(int argc, char **argv)
      * slowed down by that. It costs nothing on a run that completes. */
     setvbuf(stdout, NULL, _IOLBF, 0);
 
+#ifdef __3DS__
+    /* The screens first, so the first-run data setup can say what it is doing. */
+    N3DS_EarlyInit();
+    atexit(N3DS_Exit);
+#endif
+
     /* Before anything sleeps: on Windows every SDL_Delay is otherwise rounded up
      * to a 15.6 ms tick (src/platform_timer.c). That includes the self-tests
      * below, which is why --netplay-selftest looked hung on Windows. */
@@ -382,7 +390,10 @@ int main(int argc, char **argv)
      * /data, /grafs, … and cwd is already "/", so skip the chdir.
      * Switch: the content is a read-only mount at rom:/ and there is no chdir
      * to make; swos_data_path() (swos_io.h) anchors the data reads instead. */
-#if !defined(SWOS_WASM_BUILD) && !defined(SWOS_SWITCH_BUILD)
+#if defined(__3DS__)
+    /* The project's own files (data_json/, setup/, ...) are inside the app. */
+    chdir("romfs:/");
+#elif !defined(SWOS_WASM_BUILD) && !defined(SWOS_SWITCH_BUILD)
     chdir_to_binary(argv ? argv[0] : NULL);
 #endif
 
@@ -392,6 +403,10 @@ int main(int argc, char **argv)
      * folder if missing; if it can't be resolved, falls back to the exe dir.
      * (Was called later, after SDL_Init — moved up so the ini lookup uses it.) */
     swos_save_dir_init();
+#ifdef __3DS__
+    /* First start: build the game's data from the player's ADFs on the SD card. */
+    N3DS_PrepareData(swos_assets_dir());
+#endif
 
 #ifdef SWOS_SDL_BUILD
     /* Data-file JSON loader self-test (docs/DATA_INTERNAL_JSON.md). Runs before
@@ -1136,6 +1151,24 @@ int main(int argc, char **argv)
         }
     }
 
+    /* The stereoscopic view (stereo.h). On the 3DS always, at the 3DS's own shape;
+     * elsewhere SWOS_STEREO=1 shows it as a red/cyan anaglyph, for testing the depth
+     * without a 3DS. It needs the HUD in the framebuffer (the sub-pixel scroll's HUD
+     * layer is a second picture the depth planes do not see), so that goes off. */
+#ifdef __3DS__
+    Stereo_Enable(1);
+    opts.widescreen = 1;
+    opts.res_w = 400;
+    opts.res_h = 240;
+#else
+    if (getenv("SWOS_STEREO") && getenv("SWOS_STEREO")[0] && strcmp(getenv("SWOS_STEREO"), "0") != 0)
+        Stereo_Enable(1);
+#endif
+    if (g_stereoOn) {
+        opts.subpixel_scroll = 0;
+        Stereo_LoadConfig(swos_user_dir());
+    }
+
     /* Redirect stderr to SWOS.log in the per-user game folder (beside SWOS.ini
      * and save/ — swos_user_dir(), resolved above). Saves the tester from having
      * to remember `2> SWOS.log`, and keeps the log out of a possibly read-only
@@ -1153,7 +1186,12 @@ int main(int argc, char **argv)
         snprintf(log_path, sizeof log_path, "%s/SWOS.log", swos_user_dir());
         FILE *log = freopen(log_path, "w", stderr);
         if (log) {
+#ifdef __3DS__
+            /* Every unbuffered write is an SD card transaction: far too slow per line. */
+            setvbuf(log, NULL, _IOFBF, 16384);
+#else
             setvbuf(log, NULL, _IONBF, 0);
+#endif
         }
     }
 #endif
@@ -1201,8 +1239,16 @@ int main(int argc, char **argv)
      * and is ignored on Linux/WASM/older SDL. */
     SDL_SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2");
 
+#ifdef __3DS__
+    /* No video (src/n3ds.c owns the screens) and no joystick (the buttons are read
+     * from the HID service directly, so they are not seen twice). The timer thread
+     * runs game code, so it gets a desktop-sized stack. */
+    SDL_SetHint(SDL_HINT_THREAD_STACK_SIZE, "262144");
+    if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0) {
+#else
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS |
                   SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0) {
+#endif
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }

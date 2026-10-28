@@ -355,6 +355,8 @@ void swos_save_dir_init(void)
         fprintf(stderr, "[settings] HOME not set; using the OS preferences "
                         "path: %s\n", user);
     }
+# elif defined(__3DS__)
+    snprintf(user, sizeof user, "%s", "sdmc:/3ds/OpenSWOS3D");
 # else  /* Linux and other Unix */
     /* Same shape as the macOS branch above, and for the same reason: if the
      * process was started without HOME there is still an OS answer, and the

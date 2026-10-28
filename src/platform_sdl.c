@@ -18,6 +18,8 @@
 #include "dos_gameplay.h"    /* DosGameplay_TargetFps — 70 (DOS) vs 50 (Amiga) */
 #include "dos_graphics.h"    /* DosGfx_BuildPalette */
 #include "build_info.h"      /* the commit, in the window title */
+#include "stereo.h"          /* the stereoscopic view */
+#include "n3ds.h"            /* the Nintendo 3DS screens and buttons */
 
 #include <SDL.h>
 #include <stdio.h>
@@ -683,6 +685,13 @@ int Platform_Init(const PlatformInitOptions *opts)
      * starts -- the first VBlank ISR firing reads custom->intreqr. */
     Platform_RewireCustom();
     Platform_PreArmIsrGlobals();
+#ifdef __3DS__
+    /* No window, renderer or textures: src/n3ds.c draws the two eyes itself. */
+    s_subpixel_scroll = 0;
+    s_hud_layer = NULL;
+    N3DS_VideoReady();
+    goto video_ready;
+#endif
 
     /* SDL_WINDOW_RESIZABLE: lets the user resize/maximise the desktop window (content
      * is letterboxed by SDL_RenderSetLogicalSize below), and on macOS it's what enables
@@ -1040,6 +1049,9 @@ int Platform_Init(const PlatformInitOptions *opts)
         return -1;
     }
 
+#ifdef __3DS__
+video_ready:
+#endif
     /* Bring up the audio + input subsystems. Failures here are non-fatal —
      * we'd still rather see graphics than nothing. */
     (void)AudioSDL_Init(opts ? opts->audio_mono : 1);
@@ -1365,6 +1377,36 @@ static void refresh_palette_from_copper(void)
  * we walk SCREEN_WIDTH x SCREEN_HEIGHT bytes and look each one up in
  * the current palette to write an ARGB8888 pixel into the streaming
  * SDL texture. Same shape as swos-port-c's `updateScreen`. */
+static const uint8_t *presented_fb(void)
+{
+    /* See chunky_to_rgba: the completed frame, not the one being drawn. */
+    if (_usePlaneOffsetFlag != 0)
+        return _frontbufferMaskBuffer;
+    if (_useAltBaseFlag != 0)
+        return (const uint8_t *)(uintptr_t)_frontbufferBasePtr;
+    return (const uint8_t *)(uintptr_t)_frontbufferBaseAltPtr;
+}
+
+/* SWOS_STEREO=1 on a desktop: the 3DS's two eyes as a red/cyan anaglyph, so the
+ * depth can be checked with glasses or by eye on a screenshot. */
+static int stereo_anaglyph(const uint8_t *fb, uint32_t *dst, int dst_pitch_pixels)
+{
+    static uint8_t l[FRONTBUFFER_MAX_STRIDE_BYTES], r[FRONTBUFFER_MAX_STRIDE_BYTES];
+    if (!Stereo_FrameHasDepth(fb))
+        return 0;
+    for (int y = 0; y < _screen_height; ++y) {
+        uint32_t *out = dst + (size_t)y * dst_pitch_pixels;
+        Stereo_ComposeRow(fb, _screen_width, y, -1, 256, l);
+        Stereo_ComposeRow(fb, _screen_width, y, +1, 256, r);
+        for (int x = 0; x < _screen_width; ++x) {
+            SDL_Color a = s_palette[l[x]], b = s_palette[r[x]];
+            uint32_t lum = ((uint32_t)a.r * 77 + (uint32_t)a.g * 150 + (uint32_t)a.b * 29) >> 8;
+            out[x] = 0xFF000000u | (lum << 16) | ((uint32_t)b.g << 8) | (uint32_t)b.b;
+        }
+    }
+    return 1;
+}
+
 static void chunky_to_rgba(uint32_t *dst, int dst_pitch_pixels)
 {
     /* Double-buffer semantics — read the *completed* frame, not the
@@ -1390,6 +1432,8 @@ static void chunky_to_rgba(uint32_t *dst, int dst_pitch_pixels)
     else
         fb = (const uint8_t *)(uintptr_t)_frontbufferBaseAltPtr;
     if (!fb) return;
+    if (g_stereoOn && stereo_anaglyph(fb, dst, dst_pitch_pixels))
+        return;
 
     /* Originally applied the Amiga copper Y offset:
      *     fb += cameraYMod320 * FRONTBUFFER_ROW_STRIDE_BYTES;
@@ -1552,6 +1596,13 @@ static void maybe_dump_frame(const uint32_t *argb)
 static void pump_events_any_thread(void)
 {
     SDL_Event ev;
+#ifdef __3DS__
+    /* The buttons, and the system: HOME-menu close or power off quits. */
+    if (!N3DS_PollInput()) {
+        Platform_RequestQuit();
+        AudioSDL_PauseAndClear();
+    }
+#endif
     while (SDL_PollEvent(&ev)) {
         switch (ev.type) {
         case SDL_QUIT:
@@ -2019,6 +2070,14 @@ static void render_frame_impl(int pump_full)
     for (int i = 0; i < 16; ++i) AudioSDL_Tick();
 #else
     AudioSDL_Tick();
+#endif
+
+#ifdef __3DS__
+    SDL_LockMutex(s_render_mtx);
+    refresh_palette_from_copper();
+    N3DS_Present(presented_fb(), _screen_width, _screen_height, (const uint8_t *)s_palette);
+    SDL_UnlockMutex(s_render_mtx);
+    return;
 #endif
 
     if (!s_renderer || !s_textures[0]) return;

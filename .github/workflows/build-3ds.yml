@@ -1,0 +1,166 @@
+# Builds OpenSWOS 3D (stereoscopic Sensible World of Soccer for the Nintendo 3DS)
+# and publishes the .cia and .3dsx as a GitHub release, so they can be installed
+# from a phone: FBI's "Remote Install" can scan the QR code on the release page.
+name: Build 3DS
+
+on:
+  push:
+    branches: [stereo3d]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    steps:
+      - name: Install git
+        run: |
+          apt-get update > /dev/null && apt-get install -y --no-install-recommends git ca-certificates > /dev/null
+
+      - uses: actions/checkout@v4
+
+      - name: Fetch the data converter
+        run: |
+          git config --global --add safe.directory '*'
+          git submodule update --init --depth 1 third_party/swosgfx
+
+      - name: Install 3DS libraries
+        run: |
+          # The package servers sometimes fail, so retry with a pause between tries
+          retry() {
+            for i in 1 2 3 4 5; do
+              "$@" && return 0
+              echo "::warning::Attempt $i failed: $*"
+              sleep $((i * 15))
+            done
+            echo "::error::Gave up after 5 attempts: $*"
+            return 1
+          }
+          retry apt-get install -y --no-install-recommends jq unzip curl
+          retry dkp-pacman -Sy --needed --noconfirm 3ds-dev 3ds-sdl
+
+      - name: Get makerom and bannertool
+        id: tools
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "$HOME/tools" && cd "$HOME/tools"
+          apt-get install -y --no-install-recommends git make g++ gcc > /dev/null
+
+          # Copies the first file named $2* under $1 that actually runs on this
+          # machine to $3. Zips often hold builds for several systems, and one
+          # built for another system fails with exit code 126 or 127.
+          pick_runnable() {
+            for f in $(find "$1" -type f -name "$2*"); do
+              # Only consider Linux programs, never source or text files
+              head -c 4 "$f" | grep -q "ELF" || continue
+              chmod +x "$f"
+              rc=0
+              out=$("$f" 2>&1) || rc=$?
+              if echo "$out" | grep -qE "GLIBC|cannot open shared object"; then rc=127; fi
+              if [ $rc -ne 126 ] && [ $rc -ne 127 ]; then
+                echo "::notice::Using $f for $2"
+                cp "$f" "$3"
+                return 0
+              fi
+              echo "Cannot run $f (exit $rc)"
+            done
+            return 1
+          }
+
+          # Prints the first release asset of repo $1 whose name matches $2
+          find_asset() {
+            code=$(curl -sSL -o releases.json -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$1/releases?per_page=50")
+            if [ "$code" != "200" ]; then echo "::warning::$1 releases: HTTP $code" >> diag.txt; return 1; fi
+            echo "::notice::Assets in $1: $(jq -r '[.[].assets[].name] | join(", ")' releases.json | cut -c1-500)" >> diag.txt
+            jq -r --arg p "$2" '[.[].assets[] | select(.name | test($p; "i"))][0].browser_download_url // empty' releases.json
+          }
+
+          # makerom: build from source so it matches this machine's libraries
+          # (prebuilt releases need a newer glibc), with a prebuilt fallback
+          if git clone --depth 1 https://github.com/3DSGuy/Project_CTR.git; then
+            (cd Project_CTR/makerom && make deps > /dev/null && make > /dev/null) \
+              || echo "::warning::makerom source build failed"
+            pick_runnable Project_CTR/makerom makerom ./makerom || true
+          fi
+          if [ ! -s makerom ]; then
+            url=$(find_asset 3DSGuy/Project_CTR '^makerom.*(ubuntu|linux)[^a]*\.zip$') || true
+            cat diag.txt 2>/dev/null || true; rm -f diag.txt
+            if echo "$url" | grep -q '^https'; then
+              curl -fsSL -o makerom.zip "$url" && unzip -o -q makerom.zip -d makerom_files
+              pick_runnable makerom_files makerom ./makerom || true
+            fi
+          fi
+
+          # bannertool: prebuilt release from known repos, otherwise build from source
+          for repo in Steveice10/bannertool Epicpkmn11/bannertool diasurgical/bannertool; do
+            [ -s bannertool ] && break
+            url=$(find_asset "$repo" '^bannertool.*\.zip$') || true
+            cat diag.txt 2>/dev/null || true; rm -f diag.txt
+            if echo "$url" | grep -q '^https'; then
+              rm -rf bt && curl -fsSL -o bannertool.zip "$url" && unzip -o -q bannertool.zip -d bt
+              pick_runnable bt bannertool ./bannertool || true
+            fi
+          done
+          if [ ! -s bannertool ]; then
+            echo "::warning::No runnable prebuilt bannertool found, building from source"
+            for repo in Steveice10/bannertool Epicpkmn11/bannertool diasurgical/bannertool; do
+              git clone --depth 1 --recursive "https://github.com/$repo.git" bt_src 2>/dev/null && break
+            done
+            (cd bt_src && make) || echo "::error::bannertool source build failed"
+            pick_runnable bt_src bannertool ./bannertool || true
+          fi
+
+          chmod +x makerom bannertool 2>/dev/null || true
+          [ -s makerom ] || { echo "::error::makerom unavailable, CIA will not be built"; exit 1; }
+          [ -s bannertool ] || { echo "::error::bannertool unavailable, CIA will not be built"; exit 1; }
+          ls -l makerom bannertool
+
+      - name: Build
+        run: |
+          export PATH="$DEVKITARM/bin:$PATH"
+          make -f Makefile.3ds -j"$(nproc)" 2>&1 | tee build.log
+          test -f OpenSWOS3D.3dsx || {
+            grep -E "error|undefined reference" build.log | head -n 20 | while IFS= read -r line; do
+              echo "::error::$(echo "$line" | cut -c1-300)"
+            done
+            exit 1
+          }
+
+      - name: Package CIA
+        if: steps.tools.outcome == 'success'
+        continue-on-error: true
+        run: |
+          export PATH="$DEVKITARM/bin:$PATH"
+          if ! make -f Makefile.3ds cia MAKEROM="$HOME/tools/makerom" BANNERTOOL="$HOME/tools/bannertool" > cia.log 2>&1; then
+            cat cia.log
+            tail -n 8 cia.log | while IFS= read -r line; do
+              echo "::error::CIA: $(echo "$line" | cut -c1-300)"
+            done
+            exit 1
+          fi
+          cat cia.log
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="stereo3d-${GITHUB_RUN_NUMBER}"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          CIA_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/OpenSWOS3D.cia"
+          QR="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${CIA_URL}"
+          BODY="Built from ${GITHUB_SHA}.\n\nTo install from your phone: on the 3DS open FBI, Remote Install, Scan QR Code, and scan this:\n\n![QR code](${QR})\n\nThen copy your SWOS 96/97 Amiga disk images (.adf) to sdmc:/3ds/OpenSWOS3D/ and start OpenSWOS 3D. The first start turns them into the game's data."
+          REL=$(curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" "$API/releases" \
+            -d "{\"tag_name\":\"$TAG\",\"target_commitish\":\"$GITHUB_SHA\",\"name\":\"OpenSWOS 3D build $GITHUB_RUN_NUMBER\",\"body\":\"$BODY\"}")
+          UPLOAD=$(echo "$REL" | jq -r .upload_url | sed 's/{.*//')
+          for f in OpenSWOS3D.cia OpenSWOS3D.3dsx; do
+            [ -f "$f" ] || { echo "::warning::$f was not built"; continue; }
+            curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$f" "$UPLOAD?name=$f" > /dev/null
+          done

@@ -43,7 +43,11 @@ jobs:
             return 1
           }
           retry apt-get install -y --no-install-recommends jq unzip curl
-          retry dkp-pacman -Sy --needed --noconfirm 3ds-dev 3ds-sdl
+          retry dkp-pacman -Sy --needed --noconfirm 3ds-dev
+          # SDL2 for the 3DS (3ds-sdl is the old SDL 1.2 on some package lists)
+          dkp-pacman -S --needed --noconfirm 3ds-sdl2 || dkp-pacman -S --needed --noconfirm 3ds-sdl
+          echo "::notice::SDL headers: $(find "$DEVKITPRO/portlibs/3ds" -name SDL.h | tr '\n' ' ')"
+          echo "::notice::SDL2 pkg-config: $("$DEVKITPRO/portlibs/3ds/bin/arm-none-eabi-pkg-config" --cflags --libs sdl2 2>&1 | tr '\n' ' ')"
 
       - name: Get makerom and bannertool
         id: tools

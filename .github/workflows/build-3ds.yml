@@ -147,16 +147,20 @@ jobs:
         run: |
           set +e +o pipefail
           export PATH="$DEVKITARM/bin:$PATH"
-          make -f Makefile.3ds -j"$(nproc)" > build.log 2>&1
+          make -f Makefile.3ds -j"$(nproc)" elf > build.log 2>&1
           rc=$?
           tail -n 60 build.log
-          if [ $rc -ne 0 ] || [ ! -f OpenSWOS3D.3dsx ]; then
+          if [ $rc -ne 0 ] || [ ! -f build/3ds/OpenSWOS3D.elf ]; then
             # The run's summary page shows these, so the cause is readable from a phone
             { grep -E "error|undefined reference|No such file|\*\*\*" build.log | head -n 25
               tail -n 6 build.log; } | while IFS= read -r line; do
               echo "::error::$(echo "$line" | cut -c1-400)"
             done
             exit 1
+          fi
+          # Optional: the Homebrew Launcher version (see Makefile.3ds on relocations)
+          if ! make -f Makefile.3ds OpenSWOS3D.3dsx > 3dsx.log 2>&1; then
+            echo "::warning::No .3dsx this time: $(tail -n 1 3dsx.log | cut -c1-200)"
           fi
 
       - name: Package CIA

@@ -116,9 +116,15 @@ LDLIBS  := $(SDL_LIBS) -lctru -lm
 
 vpath %.c $(SD_DIRS)
 
-.PHONY: all cia clean romfs-stage
+.PHONY: all elf cia clean romfs-stage
 
 all: $(TARGET).3dsx
+
+# The .3dsx packer refuses relocations at unaligned addresses, and the game's data
+# mirrors the Amiga's packed layouts (pointers at 2-byte offsets in Sprite and
+# friends), so it may refuse this program. The .cia is made from the ELF directly
+# and has no such limit: `make elf cia` is the build that always works.
+elf: $(ELF)
 
 $(OBJDIR) $(OBJDIR)/generated $(OBJDIR)/sd:
 	@mkdir -p $@

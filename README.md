@@ -61,12 +61,7 @@ copy, once, and downloads nothing. [INSTALL.md](INSTALL.md) shows you how.
 | [docs/DEVELOPERS.md](docs/DEVELOPERS.md) | How the code is laid out, and where it came from |
 | [docs/INDEX.md](docs/INDEX.md) | Every other document (netplay, replays, formats, the Amiga, ...) |
 
-## Found a bug?
-
-**Please report it: [github.com/benbaker76/OpenSWOS/issues](https://github.com/benbaker76/OpenSWOS/issues).** Every report
-helps, however small. Say which version you have (the bottom line of the main menu), what
-you did and what happened, and attach your `SWOS.log` (where it is:
-[INSTALL.md](INSTALL.md#if-something-goes-wrong)). A screenshot or your save helps too.
+.
 
 ## License
 

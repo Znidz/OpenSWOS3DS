@@ -19,6 +19,9 @@
  *   HUD sprites  (score, names: z >= 8000) at a fixed depth in front
  *   anything else drawn over the match (menus, overlays) at its own fixed depth
  *
+ * Menus: the backdrop just behind the screen, text and pictures in front of it,
+ * the coloured button rectangles further out, the highlighted one furthest.
+ *
  * Nothing here is match state: it is never read by the simulation, saved, or
  * sent anywhere. With stereo off (every target but the 3DS, unless the
  * SWOS_STEREO environment variable asks for the desktop test view) every hook
@@ -43,6 +46,10 @@ typedef struct StereoConfig {
     int16_t hud;          /* score panel, player name                          */
     int16_t overlay;      /* anything else drawn over a match                  */
     int16_t limit;        /* clamp, 1/8 px either way                          */
+    int16_t menuBack;     /* menus: the backdrop                               */
+    int16_t menuText;     /*        text and pictures drawn on it              */
+    int16_t menuButton;   /*        the coloured rectangles                    */
+    int16_t menuSelected; /*        the highlighted rectangle                  */
 } StereoConfig;
 
 extern int32_t       g_stereoOn;        /* depth is being recorded */
@@ -67,8 +74,9 @@ void Stereo_BeginGround(int32_t on);
 void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
                     const uint8_t *srcRow, int32_t sprW);
 
-/* Is `fb` a frame whose depth can be used? (A match is on screen and the pitch
- * was drawn into it.) Menus return 0 and are shown flat. */
+/* Once per presented frame, before Stereo_ComposeRow: is `fb` a frame with depth?
+ * A match (the pitch was drawn into it) or a menu (drawn over its backdrop, which
+ * _frontbufferMaskBuffer still holds). Anything else is shown flat. */
 int32_t Stereo_FrameHasDepth(const uint8_t *fb);
 
 /* Build one eye's row `y` of `fb` into `out` (w palette indices).

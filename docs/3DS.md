@@ -25,10 +25,17 @@ the ball rises with its `z`, its shadow lies flat, HUD sprites float in front) a
 animated crowd (part of the pitch). Anything else drawn over a match is told apart by a
 colour stamp and gets the overlay depth. At present time each eye's row is the pitch
 plane shifted by its depth, then everything over it shifted by its own, nearest last.
-Menus are flat. None of it is match state.
+None of it is match state.
+
+Menus are 3D too, without touching the menu code: `DrawMenu` paints its backdrop from
+`_frontbufferMaskBuffer` and erases items by copying it back, so at present time that
+buffer IS the backdrop plane. The backdrop sits just behind the screen, pixels that differ
+from it (text, pictures) float in front, and the menu's own coloured entries
+(`ENTRY_FRAME_AND_BACK_COLOR` with a colour) stand further out as slabs, the selected one
+furthest. A screen whose picture is mostly not that buffer is shown flat.
 
 `sdmc:/3ds/OpenSWOS3D/stereo.ini` holds the depths (written with the defaults on first
-run). The 3D slider scales them; at zero the 3D is switched off.
+run): `menu_back`, `menu_text`, `menu_button`, `menu_selected` for the menus. The 3D slider scales them; at zero the 3D is switched off.
 
 On a desktop, `SWOS_STEREO=1` shows the same two eyes as a red/cyan anaglyph.
 

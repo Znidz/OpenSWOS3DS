@@ -21,6 +21,7 @@
 #include <string.h>
 #include "game_types.h"
 #include "display.h"
+#include "menu_system.h"
 
 #define STEREO_SLOTS        3
 #define STEREO_NO_TRACK     0x7FFF
@@ -34,6 +35,10 @@ StereoConfig g_stereoCfg = {
      24,    /* hud: 3 px out                                     */
      16,    /* overlay: 2 px out                                 */
      96,    /* limit: 12 px either way                           */
+     -8,    /* menuBack: the menu backdrop 1 px into the screen   */
+     16,    /* menuText: titles, text and pictures, 2 px out      */
+     32,    /* menuButton: the rectangles, 4 px out               */
+     48,    /* menuSelected: the highlighted one, 6 px out        */
 };
 
 typedef struct {
@@ -66,6 +71,10 @@ static void set_key(const char *k, int32_t v)
     else if (!strcmp(k, "hud"))         g_stereoCfg.hud        = (int16_t)v;
     else if (!strcmp(k, "overlay"))     g_stereoCfg.overlay    = (int16_t)v;
     else if (!strcmp(k, "limit"))       g_stereoCfg.limit      = (int16_t)v;
+    else if (!strcmp(k, "menu_back"))     g_stereoCfg.menuBack     = (int16_t)v;
+    else if (!strcmp(k, "menu_text"))     g_stereoCfg.menuText     = (int16_t)v;
+    else if (!strcmp(k, "menu_button"))   g_stereoCfg.menuButton   = (int16_t)v;
+    else if (!strcmp(k, "menu_selected")) g_stereoCfg.menuSelected = (int16_t)v;
     else fprintf(stderr, "[stereo] stereo.ini: unknown key '%s'\n", k);
 }
 
@@ -83,9 +92,13 @@ void Stereo_LoadConfig(const char *dir)
                        "; Positive comes out of the screen, negative goes into it.\n"
                        "pitch_far = %d\npitch_near = %d\n"
                        "; depth per pixel of height above the pitch, in 1/64 pixel\n"
-                       "height_gain = %d\nhud = %d\noverlay = %d\nlimit = %d\n",
+                       "height_gain = %d\nhud = %d\noverlay = %d\nlimit = %d\n"
+                       "; menus: the backdrop, text and pictures, buttons, the highlighted button\n"
+                       "menu_back = %d\nmenu_text = %d\nmenu_button = %d\nmenu_selected = %d\n",
                     g_stereoCfg.pitchFar, g_stereoCfg.pitchNear, g_stereoCfg.heightGain,
-                    g_stereoCfg.hud, g_stereoCfg.overlay, g_stereoCfg.limit);
+                    g_stereoCfg.hud, g_stereoCfg.overlay, g_stereoCfg.limit,
+                    g_stereoCfg.menuBack, g_stereoCfg.menuText, g_stereoCfg.menuButton,
+                    g_stereoCfg.menuSelected);
             fclose(f);
         }
         return;
@@ -256,19 +269,86 @@ void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
 
 /* ---- present ------------------------------------------------------------ */
 
+/* ---- menus -----------------------------------------------------------------
+ *
+ * A menu is drawn over a clean copy of its backdrop: DrawMenu starts with
+ * BlitterCopyPanelToScreen2, which copies _frontbufferMaskBuffer over the screen,
+ * and an item is erased by copying that buffer back. So the backdrop plane is
+ * already there, and a pixel that differs from it is something the menu drew.
+ * The menu's own entries say where the rectangles are; those stand out as slabs,
+ * the highlighted one furthest. Nothing here touches the menu code. */
+
+enum { KIND_FLAT, KIND_MATCH, KIND_MENU };
+#define STEREO_MAX_SLABS  96
+#define STEREO_NO_SLAB    (-32768)
+
+typedef struct { int16_t x0, y0, x1, y1, d; } StereoSlab;
+
+static int32_t    s_kind;
+static StereoSlab s_slab[STEREO_MAX_SLABS];
+static int32_t    s_numSlabs;
+
+extern uint8_t  _frontbufferMaskBuffer[];
+extern uint8_t  _currentMenu[];
+extern MenuEntry _menuEntries[];
+extern int      _menu_draw_x_offset;
+
+/* Is the backdrop buffer this menu's backdrop? Other screens borrow it as scratch
+ * space (image loading), and a menu-less screen has nothing to compare with. */
+static int32_t menu_backdrop_matches(const uint8_t *fb)
+{
+    int32_t n = FRONTBUFFER_ROW_STRIDE_BYTES * _screen_height, i, same = 0, total = 0;
+    for (i = 0; i < n; i += 37, total++)
+        if (fb[i] == _frontbufferMaskBuffer[i])
+            same++;
+    return total > 0 && same * 100 >= total * 35;   /* most of the screen is backdrop */
+}
+
+static void menu_slabs(void)
+{
+    const Menu *menu = (const Menu *)_currentMenu;
+    int32_t i, count = menu->numEntries;
+    s_numSlabs = 0;
+    if (count > 255) return;
+    for (i = 0; i < count && s_numSlabs < STEREO_MAX_SLABS; i++) {
+        const MenuEntry *e = (const MenuEntry *)((const uint8_t *)_menuEntries + i * MENUENTRY_STRIDE);
+        StereoSlab *sl;
+        if (e->isInvisible || !e->alreadyDrawn || !e->dwWidth || !e->dwHeight)
+            continue;
+        if (e->background != ENTRY_FRAME_AND_BACK_COLOR || (e->bgColor & 0xF) == 0)
+            continue;                    /* transparent: its text floats, no slab */
+        sl = &s_slab[s_numSlabs++];
+        sl->x0 = (int16_t)(e->x + _menu_draw_x_offset);
+        sl->y0 = (int16_t)e->y;
+        sl->x1 = (int16_t)(sl->x0 + e->dwWidth);
+        sl->y1 = (int16_t)(e->y + e->dwHeight);
+        sl->d  = (int16_t)clamp_depth(e == menu->selectedEntry ? g_stereoCfg.menuSelected
+                                                                : g_stereoCfg.menuButton);
+    }
+}
+
+/* Called once per presented frame, before its rows are composed. */
 int32_t Stereo_FrameHasDepth(const uint8_t *fb)
 {
     extern volatile uint16_t _playGame, _playHighlightFlag;
     extern int32_t Pitch_DrawnThisMatch(void);
     StereoSlot *s;
+    s_kind = KIND_FLAT;
     if (!g_stereoOn || !fb)
         return 0;
-    if (!_playGame && !_playHighlightFlag)
-        return 0;
-    if (!Pitch_DrawnThisMatch())
-        return 0;
-    s = slot_for(fb, 0);
-    return s && s->hasPitch;
+    if (_playGame || _playHighlightFlag) {
+        if (!Pitch_DrawnThisMatch())
+            return 0;
+        s = slot_for(fb, 0);
+        if (s && s->hasPitch)
+            s_kind = KIND_MATCH;
+        return s_kind != KIND_FLAT;
+    }
+    if (fb != _frontbufferMaskBuffer && menu_backdrop_matches(fb)) {
+        menu_slabs();
+        s_kind = KIND_MENU;
+    }
+    return s_kind != KIND_FLAT;
 }
 
 /* Half the disparity, in whole pixels, for one eye: d in 1/8 px, strength /256. */
@@ -277,6 +357,48 @@ static inline int32_t eye_shift(int32_t d, int32_t strength)
     int32_t v = d * strength;               /* 1/(8*256) px of full disparity */
     /* half of it, rounded to the nearest pixel: /4096 */
     return v >= 0 ? (v + 2048) >> 12 : -((-v + 2048) >> 12);
+}
+
+static void compose_menu_row(const uint8_t *fb, int32_t w, int32_t y, int32_t eye,
+                             int32_t strength, uint8_t *out, int16_t *zrow)
+{
+    static int16_t slabRow[FRONTBUFFER_MAX_STRIDE_BYTES];
+    const uint8_t *row = fb + y * w;
+    const uint8_t *bg  = _frontbufferMaskBuffer + y * w;
+    int32_t back = clamp_depth(g_stereoCfg.menuBack);
+    int32_t text = clamp_depth(g_stereoCfg.menuText);
+    int32_t sh = eye * eye_shift(back, strength);
+    int32_t x, i;
+
+    for (x = 0; x < w; x++) {
+        int32_t sx = x + sh;
+        if (sx < 0) sx = 0;
+        if (sx >= w) sx = w - 1;
+        out[x] = bg[sx];
+        zrow[x] = (int16_t)back;
+        slabRow[x] = STEREO_NO_SLAB;
+    }
+    for (i = 0; i < s_numSlabs; i++) {
+        const StereoSlab *sl = &s_slab[i];
+        int32_t x0 = sl->x0 < 0 ? 0 : sl->x0, x1 = sl->x1 > w ? w : sl->x1;
+        if (y < sl->y0 || y >= sl->y1)
+            continue;
+        for (x = x0; x < x1; x++)
+            if (sl->d > slabRow[x]) slabRow[x] = sl->d;
+    }
+    for (x = 0; x < w; x++) {
+        int32_t d = slabRow[x], tx;
+        if (d == STEREO_NO_SLAB) {
+            if (row[x] == bg[x])
+                continue;               /* backdrop: already drawn */
+            d = text;
+        }
+        tx = x - eye * eye_shift(d, strength);
+        if (tx < 0 || tx >= w || d < zrow[tx])
+            continue;
+        out[tx] = row[x];
+        zrow[tx] = (int16_t)d;
+    }
 }
 
 void Stereo_ComposeRow(const uint8_t *fb, int32_t w, int32_t y, int32_t eye,
@@ -289,6 +411,10 @@ void Stereo_ComposeRow(const uint8_t *fb, int32_t w, int32_t y, int32_t eye,
     const int8_t  *dp;
     int32_t pd, sh, x;
 
+    if (s_kind == KIND_MENU && w <= FRONTBUFFER_MAX_STRIDE_BYTES) {
+        compose_menu_row(fb, w, y, eye, strength, out, zrow);
+        return;
+    }
     if (!s || w > FRONTBUFFER_MAX_STRIDE_BYTES) {
         memcpy(out, row, (size_t)w);
         return;

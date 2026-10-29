@@ -33,6 +33,9 @@
 #include "stereo.h"
 #include "display.h"
 #include "swosdata.h"
+#include "adf.h"
+#include "sd_manifest.h"
+#include "miniz_swos.h"
 
 /* The game uses the stack like a desktop program does. */
 u32 __stacksize__ = 1024 * 1024;
@@ -190,6 +193,140 @@ static void add_season(const char *label, SdSources *src)
     season_title(se);
 }
 
+/* ---- seasons that are only team data ------------------------------------------
+ *
+ * A season folder without a whole game in it -- loose TEAM.000 ... files, a .zip of
+ * them, or an .adf data disk -- is played over the full game found elsewhere (the
+ * 96/97 disks first): its files are gathered into season_data/<folder>/ and the
+ * converter reads them in place of the game's own (SdSources.overDir). */
+
+#define N3DS_SEASON_DATA  N3DS_USER_DIR "/season_data"
+
+static const char *base_name(const char *p)
+{
+    const char *a = strrchr(p, '/'), *b = strrchr(p, ':');
+    if (b && (!a || b > a)) a = b;
+    return a ? a + 1 : p;
+}
+
+/* Is `name` one of the game's data/ files (TEAM.000, POOLPLYR.DAT, *.TMD ...)? */
+static int32_t team_file(const char *name)
+{
+    int32_t i;
+    for (i = 0; g_sdAmigaCopy[i]; i++)
+        if (strncmp(g_sdAmigaCopy[i], "data/", 5) == 0 && strcasecmp(g_sdAmigaCopy[i] + 5, name) == 0)
+            return 1;
+    return 0;
+}
+
+static int32_t save_file(const char *dir, const char *name, const void *data, uint32_t n)
+{
+    char path[700], up[64];
+    int32_t i;
+    FILE *f;
+    for (i = 0; name[i] && i < 63; i++)
+        up[i] = (char)(name[i] >= 'a' && name[i] <= 'z' ? name[i] - 32 : name[i]);
+    up[i] = 0;
+    snprintf(path, sizeof path, "%s/%s", dir, up);
+    if (!(f = fopen(path, "wb"))) return 0;
+    i = fwrite(data, 1, n, f) == n;
+    fclose(f);
+    return i;
+}
+
+typedef struct { Adf *adf; const char *dir; int32_t count; } AdfGather;
+
+static int32_t gather_adf_cb(const char *path, uint32_t size, void *user)
+{
+    AdfGather *g = (AdfGather *)user;
+    char err[256];
+    uint32_t n;
+    uint8_t *d;
+    (void)size;
+    if (!team_file(base_name(path))) return 0;
+    d = Adf_ReadFile(g->adf, path, &n, err);
+    if (d) {
+        g->count += save_file(g->dir, base_name(path), d, n);
+        free(d);
+    }
+    return 0;
+}
+
+static int32_t gather_zip(const char *path, const char *dir)
+{
+    mz_zip_archive z;
+    int32_t i, count = 0;
+    memset(&z, 0, sizeof z);
+    if (!mz_zip_reader_init_file(&z, path, 0)) return 0;
+    for (i = 0; i < (int32_t)mz_zip_reader_get_num_files(&z); i++) {
+        mz_zip_archive_file_stat st;
+        char out[700];
+        if (!mz_zip_reader_file_stat(&z, (mz_uint)i, &st) || st.m_is_directory) continue;
+        if (!team_file(base_name(st.m_filename))) continue;
+        {
+            size_t n;
+            void *d = mz_zip_reader_extract_to_heap(&z, (mz_uint)i, &n, 0);
+            if (d) {
+                count += save_file(dir, base_name(st.m_filename), d, (uint32_t)n);
+                mz_free(d);
+            }
+        }
+        (void)out;
+    }
+    mz_zip_reader_end(&z);
+    return count;
+}
+
+/* Everything in `src` (and its folders, two deep) that is team data, into `dir`. */
+static int32_t gather_team_data(const char *src, const char *dir, int32_t depth)
+{
+    static const char *const archives[] = { "zip", NULL };
+    static const char *const disks[] = { "adf", "adz", NULL };
+    DIR *d = opendir(src);
+    struct dirent *e;
+    int32_t count = 0;
+    if (!d) return 0;
+    while ((e = readdir(d)) != NULL) {
+        char path[700], err[256];
+        if (e->d_name[0] == '.') continue;
+        snprintf(path, sizeof path, "%s/%s", src, e->d_name);
+        if (e->d_type == DT_DIR) {
+            if (depth < 2) count += gather_team_data(path, dir, depth + 1);
+        } else if (team_file(e->d_name)) {
+            SgBuf b;
+            if (Sg_ReadFile(path, &b, err) == 0) {
+                count += save_file(dir, e->d_name, b.data, b.size);
+                Sg_BufFree(&b);
+            }
+        } else if (has_ext(e->d_name, archives)) {
+            count += gather_zip(path, dir);
+        } else if (has_ext(e->d_name, disks)) {
+            AdfGather g = { Adf_Open(path, err), dir, 0 };
+            if (g.adf) {
+                Adf_Walk(g.adf, gather_adf_cb, &g);
+                Adf_Close(g.adf);
+                count += g.count;
+            }
+        }
+    }
+    closedir(d);
+    return count;
+}
+
+static void clear_dir(const char *dir)
+{
+    DIR *d = opendir(dir);
+    struct dirent *e;
+    char path[700];
+    if (!d) return;
+    while ((e = readdir(d)) != NULL) {
+        if (e->d_name[0] == '.' || e->d_type == DT_DIR) continue;
+        snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+        remove(path);
+    }
+    closedir(d);
+}
+
 static void find_seasons(void)
 {
     static const char *const exts[] = { "adf", "adz", "hdf", "lha", "zip", NULL };
@@ -210,19 +347,44 @@ static void find_seasons(void)
         closedir(d);
     }
     add_season("MAIN FOLDER", &src);
-    /* every folder under seasons/ */
+    /* every folder under seasons/: a whole game, or only its team data */
     mkdir(N3DS_SEASONS_DIR, 0777);
-    if ((d = opendir(N3DS_SEASONS_DIR)) != NULL) {
-        while ((e = readdir(d)) != NULL && s_numSeasons < N3DS_MAX_SEASONS) {
-            char label[40];
-            if (e->d_name[0] == '.') continue;
-            snprintf(path, sizeof path, "%s/%s", N3DS_SEASONS_DIR, e->d_name);
-            memset(&src, 0, sizeof src);
-            SdSources_Scan(&src, path);
-            snprintf(label, sizeof label, "%.30s", e->d_name);
-            add_season(label, &src);
+    mkdir(N3DS_SEASON_DATA, 0777);
+    {
+        static char dataOnly[N3DS_MAX_SEASONS][40];
+        int32_t numData = 0, i, base = -1;
+        if ((d = opendir(N3DS_SEASONS_DIR)) != NULL) {
+            while ((e = readdir(d)) != NULL && s_numSeasons < N3DS_MAX_SEASONS) {
+                char label[40];
+                if (e->d_name[0] == '.' || e->d_type != DT_DIR) continue;
+                snprintf(path, sizeof path, "%s/%s", N3DS_SEASONS_DIR, e->d_name);
+                snprintf(label, sizeof label, "%.30s", e->d_name);
+                memset(&src, 0, sizeof src);
+                SdSources_Scan(&src, path);
+                if (SdSources_HaveAmiga(&src))
+                    add_season(label, &src);
+                else if (numData < N3DS_MAX_SEASONS)
+                    snprintf(dataOnly[numData++], sizeof dataOnly[0], "%s", label);
+            }
+            closedir(d);
         }
-        closedir(d);
+        /* The game the team-data seasons are played over: the 96/97 disks if they are
+         * here, else the first whole game found. */
+        for (i = 0; i < s_numSeasons; i++)
+            if (base < 0 || strcmp(s_seasons[i].season, "96/97") == 0)
+                if (base < 0 || strcmp(s_seasons[base].season, "96/97") != 0) base = i;
+        for (i = 0; i < numData && base >= 0; i++) {
+            char from[700], cache[700];
+            snprintf(from, sizeof from, "%s/%s", N3DS_SEASONS_DIR, dataOnly[i]);
+            snprintf(cache, sizeof cache, "%s/%s", N3DS_SEASON_DATA, dataOnly[i]);
+            mkdir(cache, 0777);
+            clear_dir(cache);
+            if (gather_team_data(from, cache, 0) < 10)
+                continue;                        /* not a season's team data */
+            src = s_seasons[base].src;
+            snprintf(src.overDir, sizeof src.overDir, "%s", cache);
+            add_season(dataOnly[i], &src);
+        }
     }
 }
 

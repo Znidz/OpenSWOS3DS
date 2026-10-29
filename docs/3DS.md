@@ -36,6 +36,13 @@ sdmc:/3ds/OpenSWOS3D/seasons/2425/   sensiblesoccer.de's swos2425.hdf
 sdmc:/3ds/OpenSWOS3D/seasons/2526/   sensiblesoccer.de's 25/26, once its Amiga version is out
 ```
 
+A season folder can also hold only a season's **team data** -- the `TEAM.000` ... files
+(with `POOLPLYR.DAT` and the `.TMD`s if it has them), loose, in a `.zip`, or on an `.adf`
+data disk. Those are gathered into `season_data/<folder>/` and played over the whole game
+found elsewhere (the 96/97 disks first): the graphics, sound and menus are that game's,
+the teams the season's (`SdSources.overDir` in tools/swosdata; `swosdata --teams DIR` does
+the same on a PC).
+
 The main menu's SEASON button (or holding L while the game starts) lists them: "CLASSIC
 SWOS 96/97", "SWOS 24/25", ... -- a season the converter does not know yet is named from
 its folder (`2526`, `25-26`, `SWOS2526` all read "SWOS 25/26"). Choosing one restarts the

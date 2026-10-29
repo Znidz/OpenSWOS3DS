@@ -2197,6 +2197,18 @@ shots_done:
     SDL_UnlockMutex(s_render_mtx);
 }
 
+/* A tap on a menu (the 3DS's touch screen), in the menu's own coordinates. Taken by
+ * MenuProc. Nothing else taps. */
+int32_t Platform_TakeMenuTap(int32_t *x, int32_t *y)
+{
+#ifdef __3DS__
+    return N3DS_TakeMenuTap(x, y);
+#else
+    (void)x; (void)y;
+    return 0;
+#endif
+}
+
 void Platform_RenderFrame(void)
 {
     render_frame_impl(1);   /* public entry: runs on the main thread, full SDL event pump */

@@ -27,6 +27,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <dirent.h>
+#include <strings.h>
 #include "n3ds.h"
 #include "stereo.h"
 #include "display.h"
@@ -72,24 +74,6 @@ void N3DS_Exit(void)
     s_videoUp = 0;
 }
 
-static void print_controls(void)
-{
-    consoleClear();
-    printf("\x1b[1;1H\x1b[32mOpenSWOS 3D\x1b[0m\n\n"
-           " Circle Pad / D-Pad  move\n"
-           " A                   fire\n"
-           " B                   fire, skip\n"
-           " START               pause\n"
-           " SELECT              statistics\n"
-           " Y                   instant replay\n"
-           " X                   replay after match\n"
-           " L + R               quit the match\n\n"
-           " 3D slider           depth\n\n"
-           " Depth settings:\n"
-           "  sdmc:/3ds/OpenSWOS3D/stereo.ini\n"
-           " Log:\n"
-           "  sdmc:/3ds/OpenSWOS3D/SWOS.log\n");
-}
 
 /* ---- first-run data -------------------------------------------------------- */
 
@@ -130,42 +114,242 @@ static int32_t file_exists(const char *p)
     return stat(p, &st) == 0;
 }
 
+/* ---- seasons ---------------------------------------------------------------
+ *
+ * One season is a set of the game's Amiga files: the two ADFs, a hard disk image
+ * (.hdf) or a WHDLoad .lha, alone or zipped. The ones in the main folder are one
+ * season (the converter takes the best of them, 96/97 first); every folder under
+ * seasons/ is another -- e.g. seasons/2526/ for sensiblesoccer.de's 25/26 when its
+ * Amiga version is out. The first start, or holding L while the game starts, lists
+ * them all to choose from; the choice is converted into assets/ and remembered in
+ * season.txt. */
+
+#define N3DS_SEASONS_DIR  N3DS_USER_DIR "/seasons"
+#define N3DS_MAX_SEASONS  12
+#define N3DS_PENDING_FILE N3DS_USER_DIR "/season_pending.txt"
+
+typedef struct {
+    char       label[40];       /* the folder: "MAIN FOLDER" or seasons/<name> */
+    const char *season;          /* what the converter says it is: "96/97", "24/25", ... */
+    char       title[40];       /* what the list calls it: "CLASSIC SWOS 96/97", "SWOS 25/26" */
+    SdSources  src;
+} N3dsSeason;
+
+/* "96/97" is the classic; a season the converter knows is "SWOS yy/yy"; one it does not
+ * (a new release) is named from its folder when the folder looks like a season --
+ * 2526, 25-26, 25_26, SWOS2526 -- else by the folder itself. */
+static void season_title(N3dsSeason *se)
+{
+    const char *f = se->label;
+    int32_t i, n = 0;
+    char d[4];
+    if (strcmp(se->season, "96/97") == 0) {
+        snprintf(se->title, sizeof se->title, "CLASSIC SWOS 96/97");
+        return;
+    }
+    if (strlen(se->season) == 5 && se->season[2] == '/') {
+        snprintf(se->title, sizeof se->title, "SWOS %s", se->season);
+        return;
+    }
+    for (i = 0; f[i] && n < 4; i++) {
+        if (f[i] >= '0' && f[i] <= '9') d[n++] = f[i];
+        else if (n && f[i] != '-' && f[i] != '_' && f[i] != '/' && f[i] != ' ') break;
+    }
+    if (n == 4)
+        snprintf(se->title, sizeof se->title, "SWOS %c%c/%c%c", d[0], d[1], d[2], d[3]);
+    else
+        snprintf(se->title, sizeof se->title, "%.30s", f);
+    for (i = 0; se->title[i]; i++)
+        if (se->title[i] >= 'a' && se->title[i] <= 'z') se->title[i] = (char)(se->title[i] - 32);
+}
+
+static N3dsSeason s_seasons[N3DS_MAX_SEASONS];
+static int32_t    s_numSeasons;
+
+static int32_t has_ext(const char *name, const char *const *exts)
+{
+    const char *dot = strrchr(name, '.');
+    if (!dot) return 0;
+    for (; *exts; exts++)
+        if (strcasecmp(dot + 1, *exts) == 0)
+            return 1;
+    return 0;
+}
+
+static void add_season(const char *label, SdSources *src)
+{
+    N3dsSeason *se;
+    if (!SdSources_HaveAmiga(src) || s_numSeasons >= N3DS_MAX_SEASONS)
+        return;
+    se = &s_seasons[s_numSeasons++];
+    memset(se, 0, sizeof *se);
+    snprintf(se->label, sizeof se->label, "%s", label);
+    se->src = *src;
+    se->season = SdSources_AmigaSeason(&se->src);
+    if (!se->season) se->season = "?";
+    season_title(se);
+}
+
+static void find_seasons(void)
+{
+    static const char *const exts[] = { "adf", "adz", "hdf", "lha", "zip", NULL };
+    static SdSources src;
+    DIR *d;
+    struct dirent *e;
+    char path[600];
+
+    s_numSeasons = 0;
+    /* the main folder's own files, not its subfolders */
+    memset(&src, 0, sizeof src);
+    if ((d = opendir(N3DS_USER_DIR)) != NULL) {
+        while ((e = readdir(d)) != NULL) {
+            if (e->d_name[0] == '.' || !has_ext(e->d_name, exts)) continue;
+            snprintf(path, sizeof path, "%s/%s", N3DS_USER_DIR, e->d_name);
+            SdSources_AddFile(&src, path);
+        }
+        closedir(d);
+    }
+    add_season("MAIN FOLDER", &src);
+    /* every folder under seasons/ */
+    mkdir(N3DS_SEASONS_DIR, 0777);
+    if ((d = opendir(N3DS_SEASONS_DIR)) != NULL) {
+        while ((e = readdir(d)) != NULL && s_numSeasons < N3DS_MAX_SEASONS) {
+            char label[40];
+            if (e->d_name[0] == '.') continue;
+            snprintf(path, sizeof path, "%s/%s", N3DS_SEASONS_DIR, e->d_name);
+            memset(&src, 0, sizeof src);
+            SdSources_Scan(&src, path);
+            snprintf(label, sizeof label, "%.30s", e->d_name);
+            add_season(label, &src);
+        }
+        closedir(d);
+    }
+}
+
+static void remember_season(const N3dsSeason *se)
+{
+    FILE *f = fopen(N3DS_USER_DIR "/season.txt", "w");
+    if (!f) return;
+    fprintf(f, "%s\n%s\n", se->label, se->season);
+    fclose(f);
+}
+
+static void read_remembered(char *label, int32_t cap)
+{
+    FILE *f = fopen(N3DS_USER_DIR "/season.txt", "r");
+    label[0] = 0;
+    if (!f) return;
+    if (fgets(label, cap, f))
+        label[strcspn(label, "\r\n")] = 0;
+    fclose(f);
+}
+
+/* The list on the bottom screen: up/down and A, or a tap on a line. */
+static int32_t pick_season(const char *current)
+{
+    int32_t sel = 0, i, drawn = -1;
+    for (i = 0; i < s_numSeasons; i++)
+        if (strcmp(s_seasons[i].label, current) == 0) sel = i;
+    while (aptMainLoop()) {
+        u32 down;
+        hidScanInput();
+        down = hidKeysDown();
+        if (down & KEY_DUP)   sel = (sel + s_numSeasons - 1) % s_numSeasons;
+        if (down & KEY_DDOWN) sel = (sel + 1) % s_numSeasons;
+        if (down & KEY_A)     return sel;
+        if (down & KEY_TOUCH) {
+            touchPosition tp;
+            hidTouchRead(&tp);
+            i = (tp.py / 8 - 4) / 2;          /* the list starts on row 5, two rows a line */
+            if (i >= 0 && i < s_numSeasons) return i;
+        }
+        if (drawn != sel) {
+            consoleClear();
+            printf("\x1b[1;1H\x1b[32mChoose a season\x1b[0m\n"
+                   "Tap one, or D-Pad and A.\n\n\n");
+            for (i = 0; i < s_numSeasons; i++)
+                printf(" %s%-22.22s\x1b[0m\n   \x1b[90m%.30s\x1b[0m\n", i == sel ? "\x1b[33m> " : "  ",
+                       s_seasons[i].title, s_seasons[i].label);
+            printf("\nAdd seasons as folders in\n sdmc:/3ds/OpenSWOS3D/seasons/\n"
+                   "Hold L while starting to\n choose again.\n"
+                   "Careers belong to the season\n they were started in.\n");
+            drawn = sel;
+        }
+        gfxFlushBuffers();
+        gfxSwapBuffers();
+        gspWaitForVBlank();
+    }
+    N3DS_Exit();
+    exit(0);
+}
+
 void N3DS_PrepareData(const char *assetsDir)
 {
     static SdJob job;
-    char ini[1100], err[256];
+    char ini[1100], err[256], current[64], pending[64];
+    int32_t choose, have, pick, i;
 
+    hidScanInput();
+    choose = (hidKeysHeld() & KEY_L) != 0;
     snprintf(ini, sizeof ini, "%s/ASSETS.ini", assetsDir);
-    if (file_exists(ini))
+    have = file_exists(ini);
+    pending[0] = 0;
+    {
+        /* chosen from the menu's SEASON button: the game restarted to make it */
+        FILE *f = fopen(N3DS_PENDING_FILE, "r");
+        if (f) {
+            if (fgets(pending, sizeof pending, f))
+                pending[strcspn(pending, "\r\n")] = 0;
+            fclose(f);
+            remove(N3DS_PENDING_FILE);
+        }
+    }
+    if (have && !choose && !pending[0])
         return;                                     /* made already */
 
-    printf("First start: making the game data\n"
-           "from your Amiga disks.\n\n");
-    memset(&job, 0, sizeof job);
-    SdSources_Scan(&job.src, N3DS_USER_DIR);
-    if (!SdSources_HaveAmiga(&job.src)) {
+    printf("Looking for your SWOS disks...\n");
+    find_seasons();
+    if (s_numSeasons == 0) {
+        if (have)
+            return;                                 /* L held, nothing new: keep it */
         printf("\x1b[31mNo SWOS 96/97 disks found.\x1b[0m\n\n"
                "Copy your two Amiga disk images\n"
                "(.adf, or a .zip/.lha/.hdf of the\n"
                "game) into:\n\n"
                "  sdmc:/3ds/OpenSWOS3D/\n\n"
+               "or one folder per season into\n"
+               "  sdmc:/3ds/OpenSWOS3D/seasons/\n\n"
                "then start OpenSWOS 3D again.\n");
         if (SdSources_AmigaProblem()[0])
             printf("\nNote: %.200s\n", SdSources_AmigaProblem());
         wait_and_quit();
     }
-    {
-        const char *season = SdSources_AmigaSeason(&job.src);
-        printf("Season: %s\n\n", season ? season : "?");
+    read_remembered(current, sizeof current);
+    pick = -1;
+    for (i = 0; pending[0] && i < s_numSeasons; i++)
+        if (strcmp(s_seasons[i].label, pending) == 0) pick = i;
+    if (pick < 0)
+        pick = s_numSeasons == 1 && !choose ? 0 : pick_season(current);
+    if (have && strcmp(current, s_seasons[pick].label) == 0) {
+        consoleClear();
+        return;                                     /* the one already made */
     }
+
+    consoleClear();
+    printf("\x1b[1;1HMaking the game data for\n%s\n(%s).\n\n",
+           s_seasons[pick].title, s_seasons[pick].label);
+    memset(&job, 0, sizeof job);
+    job.src = s_seasons[pick].src;
     snprintf(job.outDir, sizeof job.outDir, "%s", assetsDir);
     snprintf(job.resDir, sizeof job.resDir, "romfs:");
     job.log = on_setup_log;
     job.progress = on_setup_progress;
+    remove(ini);                                    /* half-made is not made */
     if (SwosData_Run(&job, err) != 0) {
         printf("\n\x1b[31mThe data setup failed:\x1b[0m\n%.300s\n", err);
         wait_and_quit();
     }
+    remember_season(&s_seasons[pick]);
     printf("\nDone.\n");
 }
 
@@ -173,7 +357,14 @@ void N3DS_PrepareData(const char *assetsDir)
 
 void N3DS_VideoReady(void)
 {
-    print_controls();
+    /* The text console has done its job (the first-run setup): from here the bottom
+     * screen is drawn directly (n3ds_screens.c), so stdout must stop drawing on it. */
+    fflush(stdout);
+    if (!freopen(N3DS_USER_DIR "/stdout.txt", "w", stdout))
+        fclose(stdout);
+    else
+        setvbuf(stdout, NULL, _IOFBF, 8192);
+    N3DSScr_Init();
 }
 
 static void set_3d(int32_t on)
@@ -183,10 +374,12 @@ static void set_3d(int32_t on)
     gfxSet3D(on ? true : false);
 }
 
+static int32_t main_menu_showing(void);
+
 void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
 {
     uint16_t *outL, *outR;
-    int32_t x, y, strength, depth;
+    int32_t x, y, strength, depth, kind;
 
     if (!s_videoUp || !fb || w <= 0 || h <= 0 || w > FRONTBUFFER_MAX_STRIDE_BYTES)
         return;
@@ -202,11 +395,33 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
     }
 
     strength = (int32_t)(osGet3DSliderState() * 256.0f + 0.5f);
-    depth = strength > 0 && Stereo_FrameHasDepth(fb);
+    Stereo_FrameHasDepth(fb);               /* match, menu, or neither */
+    kind = Stereo_FrameKind();
+    depth = strength > 0 && kind == STEREO_FRAME_MATCH;
     set_3d(strength > 0);
 
     outL = (uint16_t *)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
     outR = s_3dOn ? (uint16_t *)gfxGetFramebuffer(GFX_TOP, GFX_RIGHT, NULL, NULL) : NULL;
+
+    /* The bottom screen: the menu to tap, the match's score and radar, or the
+     * controls and credits. */
+    if (kind == STEREO_FRAME_MENU) {
+        extern int32_t N3DS_OverlayActive(void);
+        if (!N3DS_OverlayActive())
+            N3DSScr_BottomMenu(fb, w, s_pal565, main_menu_showing());
+    }
+    else if (kind == STEREO_FRAME_MATCH)
+        N3DSScr_BottomMatch(s_pal565);
+    else
+        N3DSScr_BottomInfo();
+
+    /* In menus the top screen shows the 3D title scene; the menu is on the bottom. */
+    if (kind == STEREO_FRAME_MENU) {
+        N3DSScr_TitleTop(outL, outR, strength);
+        gfxFlushBuffers();
+        gfxSwapBuffers();
+        return;
+    }
 
     for (y = 0; y < TOP_H; y++) {
         const int32_t sy = y * h / TOP_H;
@@ -220,7 +435,7 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
             l = s_lineL;
             r = s_lineR;
         } else {
-            l = r = fb + sy * w;    /* menus: flat, on the screen */
+            l = r = fb + sy * w;    /* flat, on the screen */
         }
         for (x = 0; x < TOP_W; x++)
             pl[x * TOP_H] = s_pal565[l[s_xmap[x]]];
@@ -240,6 +455,135 @@ extern void InputSDL_TouchControls(int32_t dirs, int32_t fire);
 extern void InputSDL_TouchKey(int32_t akey);
 extern void InputSDL_TouchSkip(int32_t on);
 
+static int32_t s_tapPending, s_tapX, s_tapY;
+
+/* ---- the season list, from the main menu's SEASON button ------------------- */
+
+#define OV_ROW_Y0   34
+#define OV_ROW_H    22
+#define OV_BTN_Y0   206
+#define OV_BTN_Y1   234
+#define C565(r, g, b)  ((uint16_t)((((r) >> 3) << 11) | (((g) >> 2) << 5) | ((b) >> 3)))
+
+enum { OV_NONE, OV_LIST, OV_CONFIRM, OV_SWITCH };
+static int32_t s_overlay, s_overlayPick;
+static char    s_overlayCurrent[64];
+
+static int32_t main_menu_showing(void)
+{
+    extern volatile uintptr_t _currentMenuPtr;
+    extern uint8_t _swosMainMenu[];
+    return _currentMenuPtr == (uintptr_t)_swosMainMenu;
+}
+
+static void button(int32_t x0, int32_t x1, const char *t, uint16_t bg, uint16_t fg)
+{
+    N3DSScr_Fill(x0, OV_BTN_Y0, x1, OV_BTN_Y1, bg);
+    N3DSScr_Text(x0 + (x1 - x0 - N3DSScr_TextWidth(t, 2)) / 2, OV_BTN_Y0 + 7, t, 2, fg);
+}
+
+static void overlay_draw(void)
+{
+    const uint16_t ink = C565(235, 235, 235), back = C565(14, 18, 30);
+    char line[80];
+    int32_t i;
+    N3DSScr_Fill(0, 0, 320, 240, back);
+    if (s_overlay == OV_LIST) {
+        N3DSScr_Text(8, 8, "CHOOSE A SEASON", 2, C565(255, 230, 90));
+        for (i = 0; i < s_numSeasons && OV_ROW_Y0 + (i + 1) * OV_ROW_H <= OV_BTN_Y0; i++) {
+            int32_t y = OV_ROW_Y0 + i * OV_ROW_H, cur = strcmp(s_seasons[i].label, s_overlayCurrent) == 0;
+            N3DSScr_Fill(6, y, 314, y + OV_ROW_H - 3, cur ? C565(40, 110, 50) : C565(36, 42, 64));
+            N3DSScr_Text(12, y + 3, s_seasons[i].title, 2, ink);
+            snprintf(line, sizeof line, "%s%.20s", cur ? "PLAYING  " : "", s_seasons[i].label);
+            N3DSScr_Text(310 - N3DSScr_TextWidth(line, 1), y + 7, line, 1,
+                         cur ? C565(250, 220, 90) : C565(150, 160, 190));
+        }
+        if (s_numSeasons == 0)
+            N3DSScr_Text(12, OV_ROW_Y0 + 6, "NO SEASONS FOUND", 1, ink);
+        N3DSScr_Text(8, OV_BTN_Y0 - 12, "ADD SEASONS AS FOLDERS IN 3DS/OPENSWOS3D/SEASONS", 1, C565(150, 160, 190));
+        button(8, 312, "BACK", C565(70, 76, 100), ink);
+    } else if (s_overlay == OV_CONFIRM) {
+        const N3dsSeason *se = &s_seasons[s_overlayPick];
+        N3DSScr_Text(8, 8, "SWITCH SEASON?", 2, C565(255, 230, 90));
+        N3DSScr_Text(12, 36, se->title, 2, ink);
+        N3DSScr_Text(12, 62, "THE GAME WILL RESTART AND MAKE", 1, ink);
+        N3DSScr_Text(12, 74, "ITS DATA FROM THIS SEASON.", 1, ink);
+        N3DSScr_Text(12, 86, "IT TAKES ABOUT A MINUTE.", 1, ink);
+        N3DSScr_Text(12, 108, "CAREERS AND SAVED COMPETITIONS", 1, C565(250, 160, 120));
+        N3DSScr_Text(12, 120, "BELONG TO THE SEASON THEY WERE", 1, C565(250, 160, 120));
+        N3DSScr_Text(12, 132, "STARTED IN.", 1, C565(250, 160, 120));
+        button(8, 156, "SWITCH", C565(40, 130, 60), ink);
+        button(164, 312, "CANCEL", C565(70, 76, 100), ink);
+    } else if (s_overlay == OV_SWITCH) {
+        N3DSScr_Text(8, 100, "RESTARTING...", 2, C565(255, 230, 90));
+    }
+}
+
+/* 1 when the overlay is up (the bottom screen is the overlay's, not the menu's). */
+int32_t N3DS_OverlayActive(void)
+{
+    if (s_overlay != OV_NONE)
+        overlay_draw();
+    return s_overlay != OV_NONE;
+}
+
+/* A tap while the bottom screen shows the menu. 0: the menu's to have. */
+static int32_t overlay_tap(int32_t tx, int32_t ty)
+{
+    if (s_overlay == OV_NONE) {
+        if (!main_menu_showing() || tx < N3DS_TAB_X0 || tx >= N3DS_TAB_X1 ||
+            ty < N3DS_TAB_Y0 || ty >= N3DS_TAB_Y1)
+            return 0;
+        N3DSScr_Fill(60, 100, 260, 130, C565(14, 18, 30));
+        N3DSScr_Text(80, 111, "LOOKING FOR SEASONS...", 1, C565(235, 235, 235));
+        gfxFlushBuffers();
+        find_seasons();
+        read_remembered(s_overlayCurrent, sizeof s_overlayCurrent);
+        s_overlay = OV_LIST;
+        return 1;
+    }
+    if (s_overlay == OV_LIST) {
+        int32_t i = (ty - OV_ROW_Y0) / OV_ROW_H;
+        if (ty >= OV_BTN_Y0) {
+            s_overlay = OV_NONE;
+        } else if (ty >= OV_ROW_Y0 && i < s_numSeasons) {
+            if (strcmp(s_seasons[i].label, s_overlayCurrent) == 0)
+                s_overlay = OV_NONE;              /* the one playing now */
+            else {
+                s_overlayPick = i;
+                s_overlay = OV_CONFIRM;
+            }
+        }
+        return 1;
+    }
+    if (s_overlay == OV_CONFIRM && ty >= OV_BTN_Y0) {
+        if (tx < 160) {
+            FILE *f = fopen(N3DS_PENDING_FILE, "w");
+            if (f) {
+                fprintf(f, "%s\n", s_seasons[s_overlayPick].label);
+                fclose(f);
+                s_overlay = OV_SWITCH;
+                overlay_draw();
+                gfxFlushBuffers();
+                aptSetChainloaderToSelf();    /* start again when this run ends */
+                return 2;
+            }
+        }
+        s_overlay = OV_LIST;
+    }
+    return 1;
+}
+
+int32_t N3DS_TakeMenuTap(int32_t *x, int32_t *y)
+{
+    if (!s_tapPending)
+        return 0;
+    s_tapPending = 0;
+    *x = s_tapX;
+    *y = s_tapY;
+    return 1;
+}
+
 int32_t N3DS_PollInput(void)
 {
     u32 held, down;
@@ -251,6 +595,28 @@ int32_t N3DS_PollInput(void)
     hidScanInput();
     held = hidKeysHeld();
     down = hidKeysDown();
+
+    /* A tap on the menu (bottom screen): the SEASON button and its list first, else
+     * the menu's, taken by MenuProc (MenuTapAt). */
+    if ((down & KEY_TOUCH) && N3DSScr_BottomMode() == N3DS_BOTTOM_MENU) {
+        touchPosition tp;
+        int32_t r;
+        hidTouchRead(&tp);
+        r = overlay_tap(tp.px, tp.py);
+        if (r == 2)
+            return 0;                             /* quit; the system starts us again */
+        if (r == 0) {
+            N3DSScr_TouchToMenu(tp.px, tp.py, &s_tapX, &s_tapY);
+            s_tapPending = 1;
+        }
+    }
+    if (s_overlay != OV_NONE) {
+        if (N3DSScr_BottomMode() != N3DS_BOTTOM_MENU)
+            s_overlay = OV_NONE;                  /* the menu went away */
+        InputSDL_TouchControls(0, 0);             /* the menu waits while the list is up */
+        InputSDL_TouchSkip(0);
+        return 1;
+    }
 
     if (held & KEY_UP)    dirs |= 1;    /* KEY_UP is the D-pad or the Circle Pad */
     if (held & KEY_DOWN)  dirs |= 2;

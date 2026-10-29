@@ -1613,6 +1613,39 @@ void MenuSystem_LatchSeasonSkip(void)
     s_seasonSkipLatched = 1;
 }
 
+#ifdef SWOS_SDL_BUILD
+/* The entry at (x, y) in the menu's coordinates becomes the selected one, redrawn as
+ * a cursor move redraws it (MenuProc's navigation below), and fire is pressed for this
+ * frame. Invisible and disabled entries and ones with nothing to do are not hit; the
+ * last one drawn wins where two overlap. */
+static void MenuTapAt(int32_t x, int32_t y)
+{
+    Menu *menu = (Menu *)_currentMenu;
+    MenuEntry *hit = NULL, *old = menu->selectedEntry;
+    int32_t i;
+    for (i = 0; i < (int32_t)menu->numEntries; i++) {
+        MenuEntry *e = CalcMenuEntryAddress((uint16_t)i);
+        if (e->isInvisible || e->isDisabled || e->onSelect == 0)
+            continue;
+        if (x >= e->x && x < e->x + e->dwWidth && y >= e->y && y < e->y + e->dwHeight)
+            hit = e;
+    }
+    if (!hit)
+        return;
+    if (hit != old && old) {
+        menu->selectedEntry = hit;
+        if (old->background == NO_BACKGROUND)
+            DrawMenu();
+        else
+            CallDrawMenuItem(old);
+    }
+    _fire = 1;
+    _shortFire = 1;
+    _left = _right = _up = _down = 0;
+    _menuControlsDirection = -1;
+}
+#endif
+
 __attribute__((used, externally_visible, noinline))
 void MenuInputInjectPoint(void)
 {
@@ -1686,6 +1719,16 @@ void MenuProc(void)
     UpdateBlinkingMenuText();
     MenuCheckControls();
     MenuInputInjectPoint();   /* stable harness input-injection anchor — break here by SYMBOL */
+#ifdef SWOS_SDL_BUILD
+    {
+        /* A tap (the 3DS's touch screen): select the entry under it and press fire on
+         * it, as moving there and pressing fire would. */
+        extern int32_t Platform_TakeMenuTap(int32_t *x, int32_t *y);
+        int32_t tx, ty;
+        if (Platform_TakeMenuTap(&tx, &ty))
+            MenuTapAt(tx, ty);
+    }
+#endif
 #ifdef SWOS_SDL_BUILD
     { extern void CareerAutopilot_Tick(void); CareerAutopilot_Tick(); }  /* --career-golden */
 #endif

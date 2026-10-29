@@ -78,6 +78,9 @@ void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
  * A match (the pitch was drawn into it) or a menu (drawn over its backdrop, which
  * _frontbufferMaskBuffer still holds). Anything else is shown flat. */
 int32_t Stereo_FrameHasDepth(const uint8_t *fb);
+/* What that call found: a match, a menu, or neither. */
+enum { STEREO_FRAME_FLAT = 0, STEREO_FRAME_MATCH = 1, STEREO_FRAME_MENU = 2 };
+int32_t Stereo_FrameKind(void);
 
 /* Build one eye's row `y` of `fb` into `out` (w palette indices).
  * eye: -1 left, +1 right. strength: 0..256 (the 3D slider). */

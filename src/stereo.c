@@ -327,6 +327,11 @@ static void menu_slabs(void)
     }
 }
 
+int32_t Stereo_FrameKind(void)
+{
+    return s_kind;
+}
+
 /* Called once per presented frame, before its rows are composed. */
 int32_t Stereo_FrameHasDepth(const uint8_t *fb)
 {

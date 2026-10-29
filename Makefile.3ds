@@ -41,7 +41,7 @@ ELF     := $(OBJDIR)/$(TARGET).elf
 
 APP_TITLE       := OpenSWOS 3D
 APP_DESCRIPTION := Sensible World of Soccer, stereoscopic
-APP_AUTHOR      := OpenSWOS + 3D port
+APP_AUTHOR      := Sensible Software / OpenSWOS
 APP_ICON        := packaging/3ds/icon.png
 APP_BANNER      := packaging/3ds/banner.png
 APP_BANNER_WAV  := packaging/3ds/banner.wav
@@ -146,6 +146,7 @@ romfs-stage:
 	@rm -rf $(ROMFS)
 	@mkdir -p $(ROMFS)
 	@bash scripts/stage_runtime.sh $(ROMFS) $(ROMFS_DIRS)
+	@cp packaging/3ds/title_logo.bin $(ROMFS)/
 
 $(OBJDIR)/$(TARGET).smdh: $(APP_ICON) | $(OBJDIR)
 	$(TOOLS)/smdhtool --create "$(APP_TITLE)" "$(APP_DESCRIPTION)" "$(APP_AUTHOR)" $(APP_ICON) $@

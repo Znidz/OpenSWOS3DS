@@ -43,8 +43,21 @@ jobs:
             return 1
           }
           retry apt-get install -y --no-install-recommends jq unzip curl
-          retry dkp-pacman -Sy --needed --noconfirm 3ds-dev
-          retry dkp-pacman -S --needed --noconfirm 3ds-cmake 3ds-pkg-config || true
+          # The devkitarm image ships libctru and the 3DS tools already; the package
+          # server is only needed when it does not (and it is sometimes down).
+          echo "::notice::libctru: $(ls "$DEVKITPRO/libctru/lib" 2>/dev/null | tr '\n' ' ')"
+          echo "::notice::3DS cmake: $(ls "$DEVKITPRO/cmake" 2>/dev/null | tr '\n' ' ')"
+          if [ ! -f "$DEVKITPRO/libctru/lib/libctru.a" ] || [ ! -x "$DEVKITPRO/tools/bin/3dsxtool" ]; then
+            if ! retry dkp-pacman -Sy --needed --noconfirm 3ds-dev; then
+              dkp-pacman -Sy --needed --noconfirm 3ds-dev 2>&1 | tail -n 5 | while IFS= read -r l; do
+                echo "::error::dkp-pacman: $(echo "$l" | cut -c1-300)"
+              done
+              exit 1
+            fi
+          fi
+          if [ ! -f "$DEVKITPRO/cmake/3DS.cmake" ]; then
+            retry dkp-pacman -Sy --needed --noconfirm 3ds-cmake 3ds-pkg-config || true
+          fi
           retry apt-get install -y --no-install-recommends cmake make
 
       - name: Build SDL2 for the 3DS

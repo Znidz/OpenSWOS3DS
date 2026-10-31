@@ -584,7 +584,9 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
      * controls and credits. */
     if (kind == STEREO_FRAME_MENU) {
         extern int32_t N3DS_OverlayActive(void);
-        if (!N3DS_OverlayActive())
+        if (N3DS_OverlayActive())
+            N3DSScr_InvalidateMenu();
+        else
             N3DSScr_BottomMenu(fb, w, s_pal565, main_menu_showing());
     }
     else if (kind == STEREO_FRAME_MATCH)

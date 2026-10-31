@@ -167,7 +167,8 @@ static uint32_t rng(uint32_t *s)
 
 static void build_title_bg(void)
 {
-    uint32_t seed = 12345;
+    uint32_t seed = 12345, cseed = 0;
+    static uint32_t blockSeed[TS_BG_W / 3 + 2];
     int32_t x, y;
     s_titleBg = (uint16_t *)malloc(sizeof(uint16_t) * TS_BG_W * SCR_H);
     if (!s_titleBg) return;
@@ -179,11 +180,13 @@ static void build_title_bg(void)
                 c = RGB(30, 34, 48);                 /* the roof */
             } else if (y < TS_STANDS - 12) {
                 c = RGB(52, 56, 70);                 /* the crowd */
-                if ((rng(&seed) & 7) < 3) {
+                if ((y % 3 == 0 || y == 8) && x % 3 == 0) blockSeed[x / 3] = rng(&seed);
+                cseed = blockSeed[x / 3];
+                if ((cseed & 7) < 3) {
                     static const uint16_t crowd[6] = {
                         RGB(220,60,60), RGB(240,240,240), RGB(60,90,220),
                         RGB(240,210,80), RGB(200,160,130), RGB(110,110,120) };
-                    c = crowd[rng(&seed) % 6];
+                    c = crowd[(cseed >> 4) % 6];
                 }
             } else if (y < TS_STANDS - 2) {
                 /* advertising boards: plain coloured panels */
@@ -355,26 +358,77 @@ int32_t N3DSScr_BottomMode(void)
 }
 
 /* The menu, scaled to fit: the menu's own 336 x 272 to the screen's 320 x 240. */
+static int32_t s_menuDirty = 1;
+void N3DSScr_InvalidateMenu(void) { s_menuDirty = 1; }
+
+/* Two packed RGB565 pixels blended, weight 0..32 of b. */
+static inline uint32_t spread565(uint16_t c) { return (c | ((uint32_t)c << 16)) & 0x07E0F81Fu; }
+static inline uint32_t mix565(uint32_t a, uint32_t b, uint32_t w)
+{
+    return ((a * (32 - w) + b * w) >> 5) & 0x07E0F81Fu;
+}
+
+/* The menu is 336x272 and the screen 320x240: a non-whole scale, so picking the nearest
+ * pixel drops rows and columns unevenly and the text breaks up. Blend the four around each
+ * point instead, and only when the picture or palette changed (a menu is mostly still,
+ * and rewriting the single-buffered screen every frame tears). */
 void N3DSScr_BottomMenu(const uint8_t *fb, int32_t w, const uint16_t *pal, int32_t mainMenu)
 {
-    static uint16_t xmap[BOT_W], ymap[SCR_H];
-    static int32_t mapFor = -1;
+    static uint16_t xi[BOT_W], yi[SCR_H];
+    static uint8_t  xw[BOT_W], yw[SCR_H];
+    static uint8_t  prev[336 * 272];
+    static uint16_t prevPal[256];
+    static int32_t  mapFor = -1;
+    uint16_t line[BOT_W];
     uint16_t *out = bottom_fb();
-    int32_t x, y, margin = (w - 336) / 2;
+    int32_t x, y, margin = (w - 336) / 2, changed = s_menuDirty;
     if (margin < 0) margin = 0;
     s_bottomMode = N3DS_BOTTOM_MENU;
-    if ((s_bottomFrame++ & 1) || !out)
-        return;                                   /* 25 Hz is plenty for a menu */
+    if (!out || w < 336)
+        return;
     if (mapFor != w) {
-        for (x = 0; x < BOT_W; x++) xmap[x] = (uint16_t)(margin + x * 336 / BOT_W);
-        for (y = 0; y < SCR_H; y++) ymap[y] = (uint16_t)(y * 272 / SCR_H);
+        for (x = 0; x < BOT_W; x++) {
+            int32_t v = x * 336 * 32 / BOT_W;        /* 5 fractional bits */
+            int32_t i = v >> 5;
+            xi[x] = (uint16_t)(margin + (i > 334 ? 334 : i));
+            xw[x] = (uint8_t)(i > 334 ? 0 : (v & 31));
+        }
+        for (y = 0; y < SCR_H; y++) {
+            int32_t v = y * 272 * 32 / SCR_H;
+            int32_t i = v >> 5;
+            yi[y] = (uint16_t)(i > 270 ? 270 : i);
+            yw[y] = (uint8_t)(i > 270 ? 0 : (v & 31));
+        }
         mapFor = w;
+        changed = 1;
     }
-    for (x = 0; x < BOT_W; x++) {
-        uint16_t *col = out + x * SCR_H;
-        const uint8_t *src = fb + xmap[x];
-        for (y = 0; y < SCR_H; y++)
-            col[SCR_H - 1 - y] = pal[src[ymap[y] * w]];
+    if (memcmp(prevPal, pal, sizeof prevPal)) {
+        memcpy(prevPal, pal, sizeof prevPal);
+        changed = 1;
+    }
+    for (y = 0; y < 272; y++) {
+        const uint8_t *row = fb + y * w + margin;
+        if (memcmp(prev + y * 336, row, 336)) {
+            memcpy(prev + y * 336, row, 336);
+            changed = 1;
+        }
+    }
+    if (!changed)
+        return;
+    s_menuDirty = 0;
+    for (y = 0; y < SCR_H; y++) {
+        const uint8_t *r0 = prev + yi[y] * 336;
+        const uint8_t *r1 = r0 + 336;
+        const uint32_t wy = yw[y];
+        for (x = 0; x < BOT_W; x++) {
+            const int32_t i = xi[x] - margin;
+            uint32_t a = spread565(pal[r0[i]]), b = spread565(pal[r0[i + 1]]);
+            uint32_t c = spread565(pal[r1[i]]), d = spread565(pal[r1[i + 1]]);
+            uint32_t t = mix565(mix565(a, b, xw[x]), mix565(c, d, xw[x]), wy);
+            line[x] = (uint16_t)(t | (t >> 16));
+        }
+        for (x = 0; x < BOT_W; x++)
+            out[x * SCR_H + (SCR_H - 1 - y)] = line[x];
     }
     if (mainMenu)
         N3DSScr_SeasonTab();

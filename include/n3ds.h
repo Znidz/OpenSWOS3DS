@@ -32,6 +32,7 @@ uint16_t *N3DSScr_BottomFb(void);
 void      N3DSScr_Fill(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c);
 void      N3DSScr_Text(int32_t x, int32_t y, const char *t, int32_t scale, uint16_t c);
 int32_t   N3DSScr_TextWidth(const char *t, int32_t scale);
+void    N3DSScr_InvalidateMenu(void);   /* redraw the menu mirror next frame */
 void    N3DSScr_BottomMatch(const uint16_t *pal);
 void    N3DSScr_BottomInfo(void);
 int32_t N3DSScr_BottomMode(void);

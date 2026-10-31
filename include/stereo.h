@@ -66,6 +66,8 @@ typedef struct StereoConfig {
     int16_t hoardRise;    /* advertising boards: stand this far out of the pitch */
     int16_t hoardY0;      /* ... the world rows they cover (top .. bottom)      */
     int16_t hoardY1;
+    int16_t hoardY2;      /* ... and the far end's boards (top .. bottom)       */
+    int16_t hoardY3;
 } StereoConfig;
 
 extern int32_t       g_stereoOn;        /* depth is being recorded */

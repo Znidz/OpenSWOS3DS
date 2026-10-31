@@ -780,6 +780,14 @@ int32_t SdSources_ReadAmiga(SdSources *s, const char *rel, SgBuf *out, char *err
 {
     Adf *disks[2] = { s->disk1, s->disk2 };
     char why[256] = "";
+    /* A season's own team data first (overDir): its file, by name, flat or in data/. */
+    if (s->overDir[0] && strncmp(rel, "data/", 5) == 0) {
+        char p[1100];
+        if (Sg_FindNoCase(s->overDir, rel + 5, p, sizeof p) == 0 ||
+            Sg_FindNoCase(s->overDir, rel, p, sizeof p) == 0)
+            if (Sg_ReadFile(p, out, err) == 0)
+                return 0;
+    }
     for (int32_t i = 0; i < 2; i++) {
         if (!disks[i])
             continue;

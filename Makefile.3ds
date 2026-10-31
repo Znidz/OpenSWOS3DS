@@ -1,0 +1,168 @@
+# ============================================================================
+#  OpenSWOS 3D -- Nintendo 3DS, stereoscopic (devkitARM + libctru + SDL2)
+# ============================================================================
+#
+#     make -f Makefile.3ds            -> OpenSWOS3D.3dsx  (Homebrew Launcher)
+#     make -f Makefile.3ds cia        -> OpenSWOS3D.cia   (needs makerom + bannertool)
+#     make -f Makefile.3ds clean
+#
+#  Needs devkitPro with 3ds-dev and 3ds-sdl:
+#     dkp-pacman -S 3ds-dev 3ds-sdl
+#  and the converter's submodule:
+#     git submodule update --init third_party/swosgfx
+#
+#  It is the ordinary SDL build (the same src/), plus:
+#    src/n3ds.c         the top screen's two eyes, the buttons, the first-run setup
+#    src/stereo.c       per-pixel depth (also in every SDL build; off unless asked)
+#    tools/swosdata     the data setup, linked in: the 3DS makes the game data from
+#                       the player's ADFs on the SD card the first time it starts
+#  The project's own runtime files go into the app's romfs; the original game's
+#  data never does (it is the player's, made on the console).
+#
+#  GitHub builds it: .github/workflows/build-3ds.yml.
+# ============================================================================
+
+ifeq ($(strip $(DEVKITPRO)),)
+$(error "Set DEVKITPRO to your devkitPro install (export DEVKITPRO=/opt/devkitpro)")
+endif
+DEVKITARM ?= $(DEVKITPRO)/devkitARM
+PORTLIBS  := $(DEVKITPRO)/portlibs/3ds
+CTRULIB   := $(DEVKITPRO)/libctru
+TOOLS     := $(DEVKITPRO)/tools/bin
+
+PREFIX  := $(DEVKITARM)/bin/arm-none-eabi-
+CC      := $(PREFIX)gcc
+PKGCONF := $(PORTLIBS)/bin/arm-none-eabi-pkg-config
+
+TARGET  := OpenSWOS3D
+OBJDIR  := build/3ds
+ROMFS   := $(OBJDIR)/romfs
+ELF     := $(OBJDIR)/$(TARGET).elf
+
+APP_TITLE       := OpenSWOS 3D
+APP_DESCRIPTION := Sensible World of Soccer, stereoscopic
+APP_AUTHOR      := Sensible Software / OpenSWOS
+APP_ICON        := packaging/3ds/icon.png
+APP_BANNER      := packaging/3ds/banner.png
+APP_BANNER_WAV  := packaging/3ds/banner.wav
+APP_RSF         := packaging/3ds/OpenSWOS3D.rsf
+MAKEROM         ?= makerom
+BANNERTOOL      ?= bannertool
+
+# What the game opens from beside its binary: the git-tracked part of these trees.
+# (data_json is the menus, competitions, tactics and team ids; setup is what the
+# data setup itself reads; the rest are the project's own small files.)
+ROMFS_DIRS := data data_json grafs grafs_aga sound sound_dos setup
+
+# ---- the game ---------------------------------------------------------------
+BUILD_STAMP_UNUSED := $(shell sh scripts/gen_build_info.sh)
+
+ARCH := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
+
+SDL_CFLAGS := $(shell $(PKGCONF) --cflags sdl2 2>/dev/null)
+ifeq ($(strip $(SDL_CFLAGS)),)
+SDL_CFLAGS := -I$(PORTLIBS)/include/SDL2 -D_GNU_SOURCE=1
+endif
+SDL_LIBS := $(shell $(PKGCONF) --libs sdl2 2>/dev/null)
+ifeq ($(strip $(SDL_LIBS)),)
+SDL_LIBS := -lSDL2main -lSDL2 -lctru -lm
+endif
+# SDL's own main() (SDL_main.h renames ours to SDL_main): it starts romfs and the
+# fast CPU mode. pkg-config may list it already; twice is harmless.
+SDL_LIBS := -lSDL2main $(SDL_LIBS)
+
+DATA_FLAGS := -DCOMPETITION_DATA_C=1 -DTACTICS_DATA_C=1 -DFIXTURE_DATA_C=1 \
+              -DSIMULATION_DATA_C=1 -DPLAYER_DATA_C=1 -DRENDER_DATA_C=1 \
+              -DPALETTE_DATA_C=1 -DSTRINGS_DATA_C=1 -DGENERAL_DATA_C=1
+GAME_FLAGS := -DSWOS_TEST_RULES=1 -DSWOS_SAVE_FORMAT_JSON=1
+
+# int32_t is `long` on arm-none-eabi, and 25 of the game's headers typedef it as
+# `int` for the Amiga build (display.h, math68k.h, ...): the two conflict. Make the
+# compiler's own 32-bit type `int` -- the same size and ABI on ARM, so libctru and
+# SDL, built with `long`, link unchanged (C has no name mangling to disagree).
+INT32_FIX := -U__INT32_TYPE__ -D__INT32_TYPE__=int -U__UINT32_TYPE__ -D__UINT32_TYPE__=unsigned
+
+COMMON := $(ARCH) -O2 -g -ffunction-sections -fdata-sections -D__3DS__ $(INT32_FIX) \
+          -I$(CTRULIB)/include -I$(PORTLIBS)/include $(SDL_CFLAGS)
+
+# The main Makefile's flags (-std, the warnings it silences and why), unchanged.
+CFLAGS := $(COMMON) -std=gnu11 -fno-strict-aliasing -fno-builtin -MMD -MP \
+          $(GAME_FLAGS) $(DATA_FLAGS) \
+          -Wall -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
+          -Wno-attributes -Wno-multichar -Wno-builtin-declaration-mismatch \
+          -Wno-pointer-sign -Wno-int-conversion -Wno-incompatible-pointer-types \
+          -Wno-braces -Wno-address-of-packed-member \
+          -Wno-strict-aliasing -Wno-array-bounds -Wno-stringop-overflow \
+          -include include/swos_platform.h -Isrc -Iinclude \
+          -Itools/swosdata/lib -Ithird_party/swosgfx/lib
+
+# ---- the data setup (tools/swosdata + third_party/swosgfx) ------------------
+# Built as its own makefile builds it, but against the game's miniz
+# (src/miniz_impl.c): one copy, configured by include/miniz_swos.h.
+SD_DIRS  := tools/swosdata/lib third_party/swosgfx/lib
+SD_SRCS  := $(foreach d,$(SD_DIRS),$(wildcard $(d)/*.c))
+SD_CFLAGS := $(COMMON) -std=gnu99 -w -MMD -MP -DSWOS_SDL_BUILD=1 -DPATH_MAX=1024 \
+             -include include/miniz_swos.h -Itools/swosdata/lib \
+             -Ithird_party/swosgfx/lib -Ithird_party/miniz
+
+SOURCES := $(wildcard src/*.c) $(wildcard src/generated/*.c)
+OBJECTS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(SOURCES)) \
+           $(patsubst %.c,$(OBJDIR)/sd/%.o,$(notdir $(SD_SRCS)))
+DEPS    := $(OBJECTS:.o=.d)
+
+LDFLAGS := -specs=3dsx.specs -g $(ARCH) -Wl,--wrap=mkdir -Wl,-Map,$(OBJDIR)/$(TARGET).map -Wl,--gc-sections \
+           -L$(PORTLIBS)/lib -L$(CTRULIB)/lib
+LDLIBS  := $(SDL_LIBS) -lctru -lm
+
+vpath %.c $(SD_DIRS)
+
+.PHONY: all elf cia clean romfs-stage
+
+all: $(TARGET).3dsx
+
+# The .3dsx packer refuses relocations at unaligned addresses, and the game's data
+# mirrors the Amiga's packed layouts (pointers at 2-byte offsets in Sprite and
+# friends), so it may refuse this program. The .cia is made from the ELF directly
+# and has no such limit: `make elf cia` is the build that always works.
+elf: $(ELF)
+
+$(OBJDIR) $(OBJDIR)/generated $(OBJDIR)/sd:
+	@mkdir -p $@
+
+$(OBJDIR)/%.o: src/%.c | $(OBJDIR) $(OBJDIR)/generated
+	@echo $<
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJDIR)/sd/%.o: %.c | $(OBJDIR)/sd
+	@echo $<
+	@$(CC) $(SD_CFLAGS) -c $< -o $@
+
+$(ELF): $(OBJECTS)
+	$(CC) $(LDFLAGS) $(OBJECTS) $(LDLIBS) -o $@
+
+# romfs: only what git tracks in each tree (scripts/stage_runtime.sh), never a
+# developer's bin/ with the original game's data in it.
+romfs-stage:
+	@rm -rf $(ROMFS)
+	@mkdir -p $(ROMFS)
+	@bash scripts/stage_runtime.sh $(ROMFS) $(ROMFS_DIRS)
+	@cp packaging/3ds/title_logo.bin $(ROMFS)/
+
+$(OBJDIR)/$(TARGET).smdh: $(APP_ICON) | $(OBJDIR)
+	$(TOOLS)/smdhtool --create "$(APP_TITLE)" "$(APP_DESCRIPTION)" "$(APP_AUTHOR)" $(APP_ICON) $@
+
+$(TARGET).3dsx: $(ELF) $(OBJDIR)/$(TARGET).smdh romfs-stage
+	$(TOOLS)/3dsxtool $(ELF) $@ --smdh=$(OBJDIR)/$(TARGET).smdh --romfs=$(ROMFS)
+
+$(OBJDIR)/$(TARGET).bnr: $(APP_BANNER) $(APP_BANNER_WAV) | $(OBJDIR)
+	$(BANNERTOOL) makebanner -o $@ -i $(APP_BANNER) -a $(APP_BANNER_WAV)
+
+cia: $(TARGET).cia
+$(TARGET).cia: $(ELF) $(APP_RSF) $(OBJDIR)/$(TARGET).smdh $(OBJDIR)/$(TARGET).bnr romfs-stage
+	$(MAKEROM) -f cia -target t -exefslogo -o $@ -elf $(ELF) -rsf $(APP_RSF) \
+	    -banner $(OBJDIR)/$(TARGET).bnr -icon $(OBJDIR)/$(TARGET).smdh -DAPP_ROMFS=$(ROMFS)/
+
+clean:
+	rm -rf $(OBJDIR) $(TARGET).3dsx $(TARGET).cia
+
+-include $(DEPS)

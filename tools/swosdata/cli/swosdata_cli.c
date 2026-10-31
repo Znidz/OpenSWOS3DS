@@ -59,7 +59,8 @@ static int32_t usage(void)
 {
     fprintf(stderr,
             "usage: swosdata [--scan DIR]... [--adf FILE]... [--dos DIR] [--jag FILE]\n"
-            "                [--swos2020 DIR]\n"
+            "                [--swos2020 DIR] [--teams DIR]\n"
+            "                (--teams: a season's team data -- TEAM.000 ... -- over the Amiga copy's)\n"
             "                [--out DIR [--res DIR]]   (no --out: report what was found;\n"
             "                                           no sources: the last install's, from --out's ASSETS.ini)\n"
             "       swosdata --compare OUT REF\n"
@@ -263,6 +264,8 @@ int main(int argc, char **argv)
                 fprintf(stderr, "not a SWOS 2020 install: %s\n", v);
                 return 1;
             }
+        } else if (strcmp(a, "--teams") == 0) {
+            snprintf(job.src.overDir, sizeof job.src.overDir, "%s", v);
         } else if (strcmp(a, "--out") == 0)
             snprintf(job.outDir, sizeof job.outDir, "%s", v);
         else if (strcmp(a, "--res") == 0)

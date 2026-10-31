@@ -16,6 +16,7 @@
  * ResetAnimatedPatterns forces all animated tiles back to static.
  */
 
+#include "stereo.h"
 #include "swos_types.h"
 #include "animated_patterns.h"
 #include "game_types.h"
@@ -251,7 +252,13 @@ static void drawPatternFromIndex(uint16_t patternIndex)
 #endif
 
     /* draw to frontbuffer */
+#ifdef SWOS_SDL_BUILD
+    if (g_stereoOn) Stereo_BeginGround(1);      /* the crowd is part of the pitch (stereo.h) */
+#endif
     DrawSprite16Pixels(137, screenX, screenY);
+#ifdef SWOS_SDL_BUILD
+    if (g_stereoOn) Stereo_BeginGround(0);
+#endif
 
     /* draw to mask buffer (swap frontbuffer ptr temporarily). The
      * pointer slot is uintptr_t on both targets — save/restore at

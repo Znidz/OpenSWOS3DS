@@ -37,6 +37,9 @@ typedef struct {
     char  dosDir[1024];     /* the PC game folder */
     char  jagRom[1024];     /* the Jaguar cartridge image */
     char  s2020Dir[1024];   /* SWOS 2020's game folder: <install>/swos */
+    char  overDir[1024];    /* a season's team data, over the Amiga copy's: a folder of loose
+                             * data/ files (TEAM.000 ..., POOLPLYR.DAT, *.TMD), flat or in data/.
+                             * "" = none. The rest of the game still comes from the Amiga copy. */
     Adf  *disk1, *disk2;    /* open while SdSources_Open .. Close */
     Adf  *hdfDisk;
     LhaArchive *lhaArc;

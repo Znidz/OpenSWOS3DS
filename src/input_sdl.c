@@ -456,6 +456,13 @@ EMSCRIPTEN_KEEPALIVE void InputSDL_TouchControls(int32_t dirs, int32_t fire)
     s_touch_fire = fire != 0;
 }
 
+/* The 3DS's B button (src/n3ds.c): the second button that skips, as a pad's B does. */
+static int s_touch_skip;
+EMSCRIPTEN_KEEPALIVE void InputSDL_TouchSkip(int32_t on)
+{
+    s_touch_skip = on != 0;
+}
+
 /* `akey`: a raw Amiga scancode, 0x19 P (pause) or 0x45 ESC. */
 EMSCRIPTEN_KEEPALIVE void InputSDL_TouchKey(int32_t akey)
 {
@@ -1335,7 +1342,7 @@ void InputSDL_PostFrame(void)
      * on-screen controls count as the keyboard. */
     int p1_up = s_kbd_up, p1_down = s_kbd_down, p1_left = s_kbd_left, p1_right = s_kbd_right;
     int p1_fire = s_kbd_fire;
-    int skip = s_kbd_skip;
+    int skip = s_kbd_skip || s_touch_skip;
     touch_controls(&p1_up, &p1_down, &p1_left, &p1_right, &p1_fire);
     if (!split)
         read_pad_state(0, &p1_up, &p1_down, &p1_left, &p1_right, &p1_fire, &skip);

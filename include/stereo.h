@@ -65,6 +65,8 @@ void Stereo_PitchDrawn(const uint8_t *fb);
 /* Wrap the drawing of one sprite. Pass NULL to end. */
 void Stereo_BeginSprite(const struct Sprite *s, const struct SpriteGraphics *g);
 /* Draws between Stereo_BeginGround(1) and (0) are pitch (the animated crowd). */
+/* The screen rows the sprite about to be marked covers (its lowest row = its feet). */
+void Stereo_SetRows(int32_t top, int32_t bottom);
 void Stereo_BeginGround(int32_t on);
 
 /* The sprite blit, once per drawn row: the row's opaque pixels (src[px] != 0)

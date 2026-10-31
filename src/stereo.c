@@ -55,6 +55,7 @@ static int32_t    s_planeBytes;
 /* The sprite being drawn. */
 enum { MODE_NONE, MODE_GROUND, MODE_UPRIGHT, MODE_FLAT };
 static int32_t s_mode;
+static int32_t s_rowBottom = -1; /* lowest screen row the sprite being drawn covers */
 static int32_t s_groundRow;     /* screen row of the sprite's feet */
 static int32_t s_flatDepth;
 static int32_t s_groundSaved;   /* mode to go back to after Stereo_BeginGround(0) */
@@ -210,10 +211,16 @@ void Stereo_BeginSprite(const Sprite *spr, const SpriteGraphics *g)
     } else if (spr == &_ballSprite) {
         int32_t z = spr->z.s.i > 0 ? spr->z.s.i : 0;
         s_mode = MODE_FLAT;
-        s_flatDepth = clamp_depth(ground_depth(s_groundRow) + g_stereoCfg.heightGain * z / 8);
+        s_flatDepth = clamp_depth(ground_depth(s_groundRow) + g_stereoCfg.heightGain * z / 32);
     } else {
         s_mode = MODE_UPRIGHT;     /* players, keepers, referee, goals, flags */
     }
+}
+
+void Stereo_SetRows(int32_t top, int32_t bottom)
+{
+    (void)top;
+    s_rowBottom = bottom;
 }
 
 void Stereo_BeginGround(int32_t on)
@@ -254,9 +261,10 @@ void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
     if (s_mode == MODE_FLAT) {
         d = s_flatDepth;
     } else {
-        int32_t h = s_groundRow - y;          /* height of this row above the feet */
-        if (h < 0) h = 0;
-        d = clamp_depth(ground_depth(s_groundRow) + g_stereoCfg.heightGain * h / 8);
+        /* A standing figure is one flat card at its feet: a depth that grew row by row
+         * sheared players, and measured from the sprite's anchor it flattened the legs. */
+        int32_t feet = s_rowBottom >= 0 ? s_rowBottom : s_groundRow;
+        d = clamp_depth(ground_depth(feet) + g_stereoCfg.heightGain / 4);
     }
     for (px = 0; px < sprW; px++) {
         int32_t x = dstX + px;

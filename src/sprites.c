@@ -931,6 +931,8 @@ static void blitChunkySprite(SpriteGraphics *a0, int16_t dstX, int16_t dstY)
      * final screen coords. Adding the wrap offsets double-translates
      * sprites off-screen and is what was hiding the players/ball. */
 
+    if (g_stereoOn)
+        Stereo_SetRows(dstY, dstY + sprH - 1);
     for (int16_t py = 0; py < sprH; py++) {
         int16_t dy = dstY + py;
         if (dy < 0 || dy >= _screen_height) continue;

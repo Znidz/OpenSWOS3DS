@@ -92,14 +92,33 @@ void N3DS_EarlyInit(void)
     mkdir(N3DS_USER_DIR, 0777);
 }
 
-/* Quitting must never hang: some thread (audio pump, timer, a menu waiting on a frame
- * the system no longer shows) can block the orderly teardown. Four seconds after the
- * quit starts, end the process outright. Idempotent. */
+/* Quitting must never hang -- and must never be a kill: the system shows "an error has
+ * occurred, forcing the software to close" when a program is ended without handing back
+ * its screens and services. So when a quit starts, the game gets two seconds to unwind on
+ * its own; after that this thread takes over IN ORDER: the main thread stops drawing and
+ * reading input (s_dying), the audio thread and device are stopped, the log is flushed,
+ * the screens are handed back and the process ends through exit(). A second thread kills
+ * the process outright only if even that does not finish. Idempotent. */
+volatile int32_t s_dying;
+extern void AudioSDL_Shutdown(void);
+
+static void quit_backstop(void *arg)
+{
+    (void)arg;
+    svcSleepThread(9000000000LL);
+    svcExitProcess();
+}
+
 static void quit_watchdog(void *arg)
 {
     (void)arg;
-    svcSleepThread(4000000000LL);
-    svcExitProcess();
+    svcSleepThread(2000000000LL);
+    s_dying = 1;
+    svcSleepThread(150000000LL);        /* let a frame in progress finish */
+    AudioSDL_Shutdown();
+    fflush(stderr);
+    N3DS_Exit();                        /* the screens back to the system */
+    exit(0);
 }
 
 void N3DS_QuitWatchdog(void)
@@ -107,13 +126,13 @@ void N3DS_QuitWatchdog(void)
     static int started;
     if (started) return;
     started = 1;
-    fflush(stderr);        /* the watchdog ends the process without flushing */
-    threadCreate(quit_watchdog, NULL, 4096, 0x18, -2, true);
+    fflush(stderr);
+    threadCreate(quit_watchdog, NULL, 16384, 0x18, -2, true);
+    threadCreate(quit_backstop, NULL, 4096, 0x18, -2, true);
 }
 
 void N3DS_Exit(void)
 {
-    N3DS_QuitWatchdog();
     if (!s_videoUp) return;
     gfxExit();          /* romfs is left to the C runtime's own teardown (SDL's main may own it) */
     s_videoUp = 0;
@@ -620,7 +639,9 @@ static uint64_t s_presentTicks, s_presentCalls;
 extern volatile uint16_t _currentGameTick;   /* the 50 Hz game clock (platform_sdl.c) */
 void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
 {
-    uint64_t t0 = svcGetSystemTick();
+    uint64_t t0;
+    if (s_dying) return;
+    t0 = svcGetSystemTick();
     present_impl(fb, w, h, rgba);
     s_presentTicks += svcGetSystemTick() - t0;
     s_presentCalls++;
@@ -948,7 +969,7 @@ int32_t N3DS_PollInput(void)
     u32 held, down;
     int32_t dirs = 0;
 
-    if (!aptMainLoop())
+    if (s_dying || !aptMainLoop())
         return 0;                       /* HOME menu close / power: quit */
 
     hidScanInput();

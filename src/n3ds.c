@@ -107,6 +107,7 @@ void N3DS_QuitWatchdog(void)
     static int started;
     if (started) return;
     started = 1;
+    fflush(stderr);        /* the watchdog ends the process without flushing */
     threadCreate(quit_watchdog, NULL, 4096, 0x18, -2, true);
 }
 
@@ -688,6 +689,7 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
                     (int)(shown * 1000 / (now - t0)), (int)(shown * 10000 / (now - t0) % 10),
                     kind == STEREO_FRAME_MATCH ? "match" : "menu", s_oldModel ? "old 3DS" : "new 3DS",
                     (unsigned)(tenthsMs / 10), (unsigned)(tenthsMs % 10), (unsigned)s_presentCalls);
+            fflush(stderr);       /* the log is block-buffered: what is in it must reach the card */
             s_presentTicks = 0; s_presentCalls = 0;
             t0 = now; shown = 0;
         }

@@ -1,4 +1,3 @@
-<p align="center"><img src="docs/images/openswos-logo.png" alt="OpenSWOS" width="420"></p>
 
 # OpenSWOS 3D for the Nintendo 3DS
 

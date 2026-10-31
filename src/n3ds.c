@@ -730,13 +730,13 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
                     }
                 }
             } else if (two) {
-                const uint8_t *a = fb + sy * w, *b2 = fb + sy2 * w;
+                const uint8_t *a = Stereo_PlainRow(fb, w, sy, uL), *b2 = Stereo_PlainRow(fb, w, sy2, uR);
                 int32_t i;
                 for (i = 0; i < w; i++)
                     tL[k][i] = (s_lum[b2[i]] >= BRIGHT_LINE && s_lum[b2[i]] > s_lum[a[i]]) ? b2[i] : a[i];
                 l[k] = r[k] = tL[k];
             } else {
-                l[k] = r[k] = fb + sy * w;    /* flat, on the screen */
+                l[k] = r[k] = Stereo_PlainRow(fb, w, sy, tL[k]);    /* flat, on the screen */
             }
         }
         for (x = 0; x < TOP_W; x++) {
@@ -758,6 +758,31 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
         }
     }
 #undef BRIGHT_LINE
+
+    /* The screen-pinned HUD (score panel, names, numbers) drawn 1:1: every pixel of the sprite is
+     * a screen pixel, placed where the scaled picture would have put its corner. */
+    if (Stereo_FrameKind() == STEREO_FRAME_MATCH) {
+        const StereoHudRect *hr;
+        int32_t n = Stereo_HudRects(&hr), i, shift = depth ? Stereo_EyeShiftFor(Stereo_HudDepth(), strength) : 0;
+        for (i = 0; i < n; i++) {
+            int32_t ax = hr[i].x * TOP_W / w, ay = hr[i].y * TOP_H / h, px, py, eye;
+            for (eye = 0; eye < 2; eye++) {
+                uint16_t *out = eye ? outR : outL;
+                int32_t dx = eye ? -shift : shift;
+                if (!out) continue;
+                for (py = 0; py < hr[i].h; py++) {
+                    int32_t Y = ay + py;
+                    if (Y < 0 || Y >= TOP_H) continue;
+                    for (px = 0; px < hr[i].w; px++) {
+                        uint8_t c = hr[i].px[py * hr[i].w + px];
+                        int32_t X = ax + px + dx;
+                        if (c && X >= 0 && X < TOP_W)
+                            out[X * TOP_H + (TOP_H - 1 - Y)] = s_pal565[c];
+                    }
+                }
+            }
+        }
+    }
     gfxFlushBuffers();
     gfxSwapBuffers();
 }

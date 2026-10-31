@@ -39,6 +39,13 @@ struct SpriteGraphics;
 
 #define STEREO_DEPTH_PITCH  ((int8_t)-128)   /* depth plane marker: "the pitch's own" */
 
+/* One screen-pinned HUD sprite: its top left, size and pixels (w*h bytes, 0 = clear). */
+typedef struct StereoHudRect {
+    int16_t x, y, w, h;
+    const uint8_t *px;
+    int32_t off;
+} StereoHudRect;
+
 typedef struct StereoConfig {
     int16_t pitchFar;     /* pitch disparity at the top of the view, 1/8 px    */
     int16_t pitchNear;    /* ... and at the bottom                             */
@@ -91,6 +98,11 @@ int32_t Stereo_FrameKind(void);
  * eye: -1 left, +1 right. strength: 0..256 (the 3D slider). */
 void Stereo_ComposeRow(const uint8_t *fb, int32_t w, int32_t y, int32_t eye,
                        int32_t strength, uint8_t *out);
+/* The HUD sprites drawn this frame, and a row with them taken out (for drawing them 1:1 on top). */
+int32_t Stereo_HudRects(const StereoHudRect **list);
+const uint8_t *Stereo_PlainRow(const uint8_t *fb, int32_t w, int32_t y, uint8_t *tmp);
+int32_t Stereo_EyeShiftFor(int32_t depth, int32_t strength);
+int32_t Stereo_HudDepth(void);
 /* Both eyes of row y in one pass (the same rows ComposeRow gives, faster). */
 void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t strength,
                            uint8_t *outL, uint8_t *outR);

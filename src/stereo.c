@@ -32,6 +32,14 @@
 #define STEREO_FIELD_Y1  769
 #define STEREO_HUD_Z_MIN    8000          /* sprites.c HUD_LAYER_Z_MIN */
 
+/* Screen-pinned HUD sprites (score panel, names, numbers) are not part of the 3D scene: they are
+ * kept apart here and drawn 1:1 over the scaled picture, so their small text is not resampled. */
+#define STEREO_MAX_HUD   64
+#define STEREO_HUD_POOL  32768
+static StereoHudRect s_hudRect[STEREO_MAX_HUD];
+static uint8_t       s_hudPoolBuf[STEREO_HUD_POOL];
+static int32_t       s_hudN, s_hudUsed, s_hudCur = -1;
+
 int32_t      g_stereoOn;
 StereoConfig g_stereoCfg = {
     -48,    /* pitchFar:  the far touchline 6 px into the screen */
@@ -63,6 +71,8 @@ typedef struct {
     uint8_t       *stamp;
     int8_t        *dep;
     RowSpans      *spans;
+    uint8_t       *hudMask;      /* 1 where a screen-pinned HUD sprite drew (drawn 1:1 instead) */
+    uint8_t       *rowHud;       /* per row: any HUD pixel on it */
     int32_t        hasPitch;
 } StereoSlot;
 
@@ -94,7 +104,7 @@ static StereoSlot s_slot[STEREO_SLOTS];
 static int32_t    s_planeBytes;
 
 /* The sprite being drawn. */
-enum { MODE_NONE, MODE_GROUND, MODE_UPRIGHT, MODE_FLAT };
+enum { MODE_NONE, MODE_GROUND, MODE_UPRIGHT, MODE_FLAT, MODE_HUD };
 static int32_t s_mode;
 enum { CUR_OTHER, CUR_SHADOW, CUR_BALL };
 static int32_t s_isGoal;
@@ -194,8 +204,10 @@ static StereoSlot *slot_for(const uint8_t *fb, int32_t create)
         s->stamp = (uint8_t *)calloc(1, (size_t)s_planeBytes);
         s->dep   = (int8_t *)calloc(1, (size_t)s_planeBytes);
         s->spans = (RowSpans *)calloc((size_t)(SCREEN_HEIGHT + 1), sizeof(RowSpans));
-        if (!s->bg || !s->stamp || !s->dep || !s->spans) {
-            free(s->bg); free(s->stamp); free(s->dep); free(s->spans);
+        s->hudMask = (uint8_t *)calloc(1, (size_t)s_planeBytes);
+        s->rowHud = (uint8_t *)calloc((size_t)(SCREEN_HEIGHT + 1), 1);
+        if (!s->bg || !s->stamp || !s->dep || !s->spans || !s->hudMask || !s->rowHud) {
+            free(s->bg); free(s->stamp); free(s->dep); free(s->spans); free(s->hudMask); free(s->rowHud);
             memset(s, 0, sizeof *s);
             fprintf(stderr, "[stereo] out of memory for depth planes\n");
             return NULL;
@@ -241,6 +253,10 @@ void Stereo_PitchDrawn(const uint8_t *fb)
     memcpy(s->stamp, fb, (size_t)n);
     memset(s->dep, (uint8_t)STEREO_DEPTH_PITCH, (size_t)n);
     memset(s->spans, 0, (size_t)(SCREEN_HEIGHT + 1) * sizeof(RowSpans));
+    memset(s->hudMask, 0, (size_t)n);
+    memset(s->rowHud, 0, (size_t)(SCREEN_HEIGHT + 1));
+    s_hudN = 0;
+    s_hudUsed = 0;
     s->hasPitch = 1;
 }
 
@@ -252,9 +268,9 @@ void Stereo_BeginSprite(const Sprite *spr, const SpriteGraphics *g)
         s_mode = MODE_NONE;
         return;
     }
+    s_hudCur = -1;
     if (spr->z.s.i >= STEREO_HUD_Z_MIN) {
-        s_mode = MODE_FLAT;
-        s_flatDepth = clamp_depth(g_stereoCfg.hud);
+        s_mode = MODE_HUD;          /* kept apart: drawn 1:1 over the scaled picture */
         return;
     }
     s_groundRow = (int32_t)spr->y.s.i - (int32_t)Render_CameraY();
@@ -316,6 +332,31 @@ void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
     w = FRONTBUFFER_ROW_STRIDE_BYTES;
     base = y * w;
 
+    if (s_mode == MODE_HUD) {
+        StereoHudRect *r;
+        if (s_hudCur < 0) {
+            if (s_hudN >= STEREO_MAX_HUD) return;
+            r = &s_hudRect[s_hudN];
+            r->x = (int16_t)dstX; r->y = (int16_t)y; r->w = (int16_t)sprW; r->h = 0;
+            r->off = s_hudUsed;
+            r->px = s_hudPoolBuf + s_hudUsed;
+            s_hudCur = s_hudN++;
+        }
+        r = &s_hudRect[s_hudCur];
+        if (y != r->y + r->h || s_hudUsed + sprW > STEREO_HUD_POOL)
+            return;
+        memcpy(s_hudPoolBuf + s_hudUsed, srcRow, (size_t)sprW);
+        s_hudUsed += sprW;
+        r->h++;
+        for (px = 0; px < sprW; px++) {
+            int32_t x = dstX + px;
+            if (srcRow[px] && x >= 0 && x < w)
+                s->hudMask[base + x] = 1;
+        }
+        s->rowHud[y] = 1;
+        return;
+    }
+
     if (s_mode == MODE_GROUND) {
         for (px = 0; px < sprW; px++) {
             int32_t x = dstX + px;
@@ -333,7 +374,9 @@ void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
     } else {
         /* A standing figure is one flat card at its feet: a depth that grew row by row
          * sheared players, and measured from the sprite's anchor it flattened the legs. */
-        int32_t feet = s_rowBottom >= 0 ? s_rowBottom : s_groundRow;
+        /* a goal's height is measured from the goal line it stands on (where its shadow falls),
+         * not from the bottom of its picture, which includes the net behind the line */
+        int32_t feet = s_isGoal ? s_groundRow : (s_rowBottom >= 0 ? s_rowBottom : s_groundRow);
         int32_t h = feet - y;                      /* rows above the feet */
         if (h < 0) h = 0;
         if (s_isGoal)       /* a goal: its base out, the bar further, the net in between */
@@ -547,6 +590,39 @@ void Stereo_ComposeRow(const uint8_t *fb, int32_t w, int32_t y, int32_t eye,
     }
 }
 
+int32_t Stereo_HudRects(const StereoHudRect **list)
+{
+    *list = s_hudRect;
+    return s_hudN;
+}
+
+int32_t Stereo_EyeShiftFor(int32_t depth, int32_t strength)
+{
+    return eye_shift(clamp_depth(depth), strength);
+}
+
+int32_t Stereo_HudDepth(void)
+{
+    return g_stereoCfg.hud;
+}
+
+/* Row y of fb with the HUD sprites' pixels taken back out (what was under them, from the
+ * stamp plane), so the scaled picture has no HUD and it can be drawn 1:1 instead. */
+const uint8_t *Stereo_PlainRow(const uint8_t *fb, int32_t w, int32_t y, uint8_t *tmp)
+{
+    StereoSlot *s = slot_for(fb, 0);
+    const uint8_t *row = fb + y * w;
+    int32_t x;
+    if (!s || s_kind != KIND_MATCH || y > SCREEN_HEIGHT || !s->rowHud[y])
+        return row;
+    {
+        const uint8_t *st = s->stamp + y * w, *m = s->hudMask + y * w;
+        for (x = 0; x < w; x++)
+            tmp[x] = m[x] ? st[x] : row[x];
+    }
+    return tmp;
+}
+
 /* Both eyes of one row at once. The pitch is a shifted copy (memcpy, not a clamped pixel
  * loop), and the pass over what stands on it -- the part that costs -- reads each pixel once
  * and writes it to both eyes through a table of shifts. Same result as two ComposeRow calls. */
@@ -571,6 +647,7 @@ void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t stre
     static int8_t  lut[256];
     static int32_t lutFor = -1;
     StereoSlot *s = slot_for(fb, 0);
+    static uint8_t plain[FRONTBUFFER_MAX_STRIDE_BYTES];
     const uint8_t *row = fb + y * w, *bg, *st;
     const int8_t *dp;
     int32_t pd, e, x;
@@ -588,6 +665,7 @@ void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t stre
     bg = s->bg + y * w;
     st = s->stamp + y * w;
     dp = s->dep + y * w;
+    row = Stereo_PlainRow(fb, w, y, plain);
 
     pd = ground_depth(y);
     e = eye_shift(pd, strength);

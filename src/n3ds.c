@@ -62,7 +62,8 @@ static int32_t  s_videoUp;
 static int32_t  s_3dOn = -1;
 static int32_t  s_oldModel, s_presentTick;
 static uint16_t s_pal565[256];
-static uint16_t s_xmap[TOP_W];
+static uint16_t s_xmap[TOP_W], s_xlast[TOP_W];
+static uint8_t  s_lum[256];       /* brightness of each palette entry, to keep thin white lines */
 static int32_t  s_xmapFor;
 static uint8_t  s_lineL[FRONTBUFFER_MAX_STRIDE_BYTES];
 static uint8_t  s_lineR[FRONTBUFFER_MAX_STRIDE_BYTES];
@@ -582,10 +583,15 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
     for (x = 0; x < 256; x++) {
         const uint8_t *c = rgba + x * 4;
         s_pal565[x] = (uint16_t)(((c[0] >> 3) << 11) | ((c[1] >> 2) << 5) | (c[2] >> 3));
+        s_lum[x] = (uint8_t)((c[0] * 77 + c[1] * 150 + c[2] * 29) >> 8);
     }
     if (s_xmapFor != w) {
         for (x = 0; x < TOP_W; x++)
             s_xmap[x] = (uint16_t)(x * w / TOP_W);
+        for (x = 0; x < TOP_W; x++) {
+            int32_t end = (x + 1) * w / TOP_W;
+            s_xlast[x] = (uint16_t)(end > s_xmap[x] ? end - 1 : s_xmap[x]);   /* last column it covers */
+        }
         s_xmapFor = w;
     }
 
@@ -658,32 +664,60 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
     /* The framebuffer is the screen turned on its side: column x is 240 pixels, bottom to
      * top, so a row at a time touches a new cache line per pixel. Take 8 rows, then write
      * each column's 8 pixels together (they are neighbours in memory). */
+    /* 454 x 272 becomes 400 x 240, so some output pixels cover two source columns or rows. Taking
+     * just one dropped about a column in eight, and a one-pixel white line (a touchline) could
+     * fall in a dropped one. Where two are covered, a bright one (a white line or kit) wins. */
+#define BRIGHT_LINE 190
     for (y = 0; y < TOP_H; y += 8) {
         static uint8_t tL[8][FRONTBUFFER_MAX_STRIDE_BYTES], tR[8][FRONTBUFFER_MAX_STRIDE_BYTES];
+        static uint8_t uL[FRONTBUFFER_MAX_STRIDE_BYTES], uR[FRONTBUFFER_MAX_STRIDE_BYTES];
         const uint8_t *l[8], *r[8];
         int32_t k;
         for (k = 0; k < 8; k++) {
             const int32_t sy = (y + k) * h / TOP_H;
+            const int32_t sy2 = (y + k + 1) * h / TOP_H - 1;     /* the last source row it covers */
+            const int32_t two = sy2 > sy;
             if (depth) {
                 Stereo_ComposeRowPair(fb, w, sy, strength, tL[k], tR[k]);
                 l[k] = tL[k];
                 r[k] = tR[k];
+                if (two) {
+                    int32_t i;
+                    Stereo_ComposeRowPair(fb, w, sy2, strength, uL, uR);
+                    for (i = 0; i < w; i++) {
+                        if (s_lum[uL[i]] >= BRIGHT_LINE && s_lum[uL[i]] > s_lum[tL[k][i]]) tL[k][i] = uL[i];
+                        if (s_lum[uR[i]] >= BRIGHT_LINE && s_lum[uR[i]] > s_lum[tR[k][i]]) tR[k][i] = uR[i];
+                    }
+                }
+            } else if (two) {
+                const uint8_t *a = fb + sy * w, *b2 = fb + sy2 * w;
+                int32_t i;
+                for (i = 0; i < w; i++)
+                    tL[k][i] = (s_lum[b2[i]] >= BRIGHT_LINE && s_lum[b2[i]] > s_lum[a[i]]) ? b2[i] : a[i];
+                l[k] = r[k] = tL[k];
             } else {
                 l[k] = r[k] = fb + sy * w;    /* flat, on the screen */
             }
         }
         for (x = 0; x < TOP_W; x++) {
-            const int32_t sx = s_xmap[x];
+            const int32_t sx = s_xmap[x], sx2 = s_xlast[x];
             uint16_t *pl = outL + x * TOP_H + (TOP_H - 8 - y);
-            for (k = 0; k < 8; k++)
-                pl[7 - k] = s_pal565[l[k][sx]];
+            for (k = 0; k < 8; k++) {
+                uint8_t a = l[k][sx];
+                if (sx2 != sx) { uint8_t b2 = l[k][sx2]; if (s_lum[b2] >= BRIGHT_LINE && s_lum[b2] > s_lum[a]) a = b2; }
+                pl[7 - k] = s_pal565[a];
+            }
             if (outR) {
                 uint16_t *pr = outR + x * TOP_H + (TOP_H - 8 - y);
-                for (k = 0; k < 8; k++)
-                    pr[7 - k] = s_pal565[r[k][sx]];
+                for (k = 0; k < 8; k++) {
+                    uint8_t a = r[k][sx];
+                    if (sx2 != sx) { uint8_t b2 = r[k][sx2]; if (s_lum[b2] >= BRIGHT_LINE && s_lum[b2] > s_lum[a]) a = b2; }
+                    pr[7 - k] = s_pal565[a];
+                }
             }
         }
     }
+#undef BRIGHT_LINE
     gfxFlushBuffers();
     gfxSwapBuffers();
 }

@@ -49,13 +49,46 @@ StereoConfig g_stereoCfg = {
      24,    /* goalRise: a goal's base 3 px out, its bar further  */
 };
 
+/* Where sprites were drawn, per row: a few [x0,x1) intervals, merged as they come. Present
+ * only looks at these (and at rows something untracked drew on), not at every pixel. */
+#define STEREO_MAX_SPANS 6
+typedef struct {
+    uint16_t x0[STEREO_MAX_SPANS], x1[STEREO_MAX_SPANS];
+    uint8_t  n;
+} RowSpans;
+
 typedef struct {
     const uint8_t *fb;
     uint8_t       *bg;
     uint8_t       *stamp;
     int8_t        *dep;
+    RowSpans      *spans;
     int32_t        hasPitch;
 } StereoSlot;
+
+static void span_add(RowSpans *r, int32_t x0, int32_t x1)
+{
+    int32_t i;
+    for (i = 0; i < r->n; i++)                      /* touching or overlapping one: extend it */
+        if (x0 <= r->x1[i] && x1 >= r->x0[i]) {
+            if (x0 < r->x0[i]) r->x0[i] = (uint16_t)x0;
+            if (x1 > r->x1[i]) r->x1[i] = (uint16_t)x1;
+            return;
+        }
+    if (r->n < STEREO_MAX_SPANS) {
+        r->x0[r->n] = (uint16_t)x0;
+        r->x1[r->n] = (uint16_t)x1;
+        r->n++;
+        return;
+    }
+    for (i = 1; i < r->n; i++) {                    /* full: one span over them all */
+        if (r->x0[i] < r->x0[0]) r->x0[0] = r->x0[i];
+        if (r->x1[i] > r->x1[0]) r->x1[0] = r->x1[i];
+    }
+    r->n = 1;
+    if (x0 < r->x0[0]) r->x0[0] = (uint16_t)x0;
+    if (x1 > r->x1[0]) r->x1[0] = (uint16_t)x1;
+}
 
 static StereoSlot s_slot[STEREO_SLOTS];
 static int32_t    s_planeBytes;
@@ -71,7 +104,7 @@ static int32_t s_groundRow;     /* screen row of the sprite's feet */
 static int32_t s_flatDepth;
 static int32_t s_groundSaved;   /* mode to go back to after Stereo_BeginGround(0) */
 
-extern Sprite _ballSprite, _ballShadowSprite;
+extern Sprite _ballSprite, _ballShadowSprite, _goal1TopSprite, _goal2BottomSprite;
 
 /* ---- configuration ---------------------------------------------------- */
 
@@ -160,8 +193,9 @@ static StereoSlot *slot_for(const uint8_t *fb, int32_t create)
         s->bg    = (uint8_t *)calloc(1, (size_t)s_planeBytes);
         s->stamp = (uint8_t *)calloc(1, (size_t)s_planeBytes);
         s->dep   = (int8_t *)calloc(1, (size_t)s_planeBytes);
-        if (!s->bg || !s->stamp || !s->dep) {
-            free(s->bg); free(s->stamp); free(s->dep);
+        s->spans = (RowSpans *)calloc((size_t)(SCREEN_HEIGHT + 1), sizeof(RowSpans));
+        if (!s->bg || !s->stamp || !s->dep || !s->spans) {
+            free(s->bg); free(s->stamp); free(s->dep); free(s->spans);
             memset(s, 0, sizeof *s);
             fprintf(stderr, "[stereo] out of memory for depth planes\n");
             return NULL;
@@ -206,6 +240,7 @@ void Stereo_PitchDrawn(const uint8_t *fb)
     memcpy(s->bg, fb, (size_t)n);
     memcpy(s->stamp, fb, (size_t)n);
     memset(s->dep, (uint8_t)STEREO_DEPTH_PITCH, (size_t)n);
+    memset(s->spans, 0, (size_t)(SCREEN_HEIGHT + 1) * sizeof(RowSpans));
     s->hasPitch = 1;
 }
 
@@ -225,12 +260,7 @@ void Stereo_BeginSprite(const Sprite *spr, const SpriteGraphics *g)
     s_groundRow = (int32_t)spr->y.s.i - (int32_t)Render_CameraY();
     s_cur = CUR_OTHER;
     s_isGoal = 0;
-    if (spr != &_ballShadowSprite && spr != &_ballSprite && spr->teamNumber == 0) {
-        int32_t gx = spr->x.s.i - 336, gy = spr->y.s.i;
-        if (gx < 0) gx = -gx;
-        /* the goals: no team, on the centre line, at either goal line (pitch 129..769) */
-        s_isGoal = gx <= 70 && ((gy >= 129 - 40 && gy <= 129 + 40) || (gy >= 769 - 40 && gy <= 769 + 40));
-    }
+    s_isGoal = (spr == &_goal1TopSprite || spr == &_goal2BottomSprite);
     if (spr == &_ballShadowSprite) {
         s_cur = CUR_SHADOW;
         s_mode = MODE_FLAT;
@@ -310,6 +340,11 @@ void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
             d = clamp_depth(ground_depth(feet) + g_stereoCfg.goalRise + h * 3);
         else                /* a player leans out: feet near the ground, the head ~2 px out */
             d = clamp_depth(ground_depth(feet) + g_stereoCfg.heightGain / 2 + h * g_stereoCfg.heightGain / 16);
+    }
+    {
+        int32_t lo = dstX < 0 ? 0 : dstX, hi = dstX + sprW > w ? w : dstX + sprW;
+        if (hi > lo && y <= SCREEN_HEIGHT)
+            span_add(&s->spans[y], lo, hi);
     }
     for (px = 0; px < sprW; px++) {
         int32_t x = dstX + px;
@@ -591,22 +626,38 @@ void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t stre
         }
     }
 
-    for (x = 0; x < w; x++) {
-        uint8_t c = row[x];
-        int32_t d, sh, t;
-        if (c == st[x]) {
-            if (dp[x] == STEREO_DEPTH_PITCH)
-                continue;
-            d = dp[x];
-        } else {
-            d = clamp_depth(g_stereoCfg.overlay);
+#define PAIR_PX(X)                                                          \
+    do {                                                                    \
+        uint8_t c = row[X];                                                 \
+        int32_t d, sh, t;                                                   \
+        if (c == st[X]) {                                                   \
+            if (dp[X] == STEREO_DEPTH_PITCH) continue;                      \
+            d = dp[X];                                                      \
+        } else {                                                            \
+            d = clamp_depth(g_stereoCfg.overlay);                           \
+        }                                                                   \
+        sh = lut[d + 128];                                                  \
+        t = (X) + sh;                               /* left eye */          \
+        if (t >= 0 && t < w && d >= zL[t]) { outL[t] = c; zL[t] = (int8_t)d; } \
+        t = (X) - sh;                               /* right eye */         \
+        if (t >= 0 && t < w && d >= zR[t]) { outR[t] = c; zR[t] = (int8_t)d; } \
+    } while (0)
+
+    if (memcmp(row, st, (size_t)w) != 0) {
+        /* something untracked drew on this row (text, an overlay): look at every pixel */
+        for (x = 0; x < w; x++)
+            PAIR_PX(x);
+    } else if (y <= SCREEN_HEIGHT) {
+        /* only sprites: look at where they were drawn */
+        const RowSpans *rs = &s->spans[y];
+        int32_t k;
+        for (k = 0; k < rs->n; k++) {
+            int32_t x1 = rs->x1[k];
+            for (x = rs->x0[k]; x < x1; x++)
+                PAIR_PX(x);
         }
-        sh = lut[d + 128];
-        t = x + sh;                               /* left eye */
-        if (t >= 0 && t < w && d >= zL[t]) { outL[t] = c; zL[t] = (int8_t)d; }
-        t = x - sh;                               /* right eye */
-        if (t >= 0 && t < w && d >= zR[t]) { outR[t] = c; zR[t] = (int8_t)d; }
     }
+#undef PAIR_PX
 }
 
 #endif /* SWOS_SDL_BUILD */

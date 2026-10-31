@@ -559,7 +559,19 @@ static void set_3d(int32_t on)
 
 static int32_t main_menu_showing(void);
 
+static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba);
+
+/* Times the present step so the log can say how much of a frame it takes. */
+static uint64_t s_presentTicks, s_presentCalls;
 void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
+{
+    uint64_t t0 = svcGetSystemTick();
+    present_impl(fb, w, h, rgba);
+    s_presentTicks += svcGetSystemTick() - t0;
+    s_presentCalls++;
+}
+
+static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
 {
     uint16_t *outL, *outR;
     int32_t x, y, strength, depth, kind;
@@ -604,9 +616,14 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
         if (!t0) t0 = now;
         shown++;
         if (now - t0 >= 5000) {
-            fprintf(stderr, "[fps] %d.%d shown/s (%s, %s)\n", (int)(shown * 1000 / (now - t0)),
-                    (int)(shown * 10000 / (now - t0) % 10), kind == STEREO_FRAME_MATCH ? "match" : "menu",
-                    s_oldModel ? "old 3DS" : "new 3DS");
+            /* ticks are 268.1 MHz: ms per call = ticks / 268111 / calls */
+            uint64_t calls = s_presentCalls ? s_presentCalls : 1;
+            uint32_t tenthsMs = (uint32_t)(s_presentTicks * 10 / 268111 / calls);
+            fprintf(stderr, "[fps] %d.%d shown/s (%s, %s) present %u.%u ms/call, %u calls\n",
+                    (int)(shown * 1000 / (now - t0)), (int)(shown * 10000 / (now - t0) % 10),
+                    kind == STEREO_FRAME_MATCH ? "match" : "menu", s_oldModel ? "old 3DS" : "new 3DS",
+                    (unsigned)(tenthsMs / 10), (unsigned)(tenthsMs % 10), (unsigned)s_presentCalls);
+            s_presentTicks = 0; s_presentCalls = 0;
             t0 = now; shown = 0;
         }
     }

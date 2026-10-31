@@ -62,6 +62,7 @@ static int32_t  s_videoUp;
 static int32_t  s_3dOn = -1;
 static int32_t  s_oldModel, s_presentTick;
 static uint16_t s_pal565[256];
+typedef uint32_t __attribute__((may_alias)) u32alias;   /* two 565 pixels at a time */
 static uint16_t s_xmap[TOP_W], s_xlast[TOP_W];
 static uint8_t  s_lum[256];       /* brightness of each palette entry, to keep thin white lines */
 static int32_t  s_xmapFor;
@@ -637,7 +638,7 @@ static int32_t main_menu_showing(void);
 static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba);
 
 /* Times the present step so the log can say how much of a frame it takes. */
-static uint64_t s_presentTicks, s_presentCalls;
+static uint64_t s_presentTicks, s_presentCalls, s_tBottom, s_tTop, s_tmark;
 extern volatile uint16_t _currentGameTick;   /* the 50 Hz game clock (platform_sdl.c) */
 void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
 {
@@ -715,6 +716,10 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
             { extern void AudioSDL_TakeStats(uint32_t *, uint32_t *);
               uint32_t un, lo;
               AudioSDL_TakeStats(&un, &lo);
+              fprintf(stderr, "[present] bottom screen %u.%u ms, 3D rows + write %u.%u ms (per call)\n",
+                      (unsigned)(s_tBottom * 10 / 268111 / calls / 10), (unsigned)(s_tBottom * 10 / 268111 / calls % 10),
+                      (unsigned)(s_tTop * 10 / 268111 / calls / 10), (unsigned)(s_tTop * 10 / 268111 / calls % 10));
+              s_tBottom = s_tTop = 0;
               fprintf(stderr, "[audio] %u underruns, %u low-queue refills in the last 5 s\n", (unsigned)un, (unsigned)lo); }
             fflush(stderr);       /* the log is block-buffered: what is in it must reach the card */
             s_presentTicks = 0; s_presentCalls = 0;
@@ -725,6 +730,7 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
     outL = (uint16_t *)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
     outR = s_3dOn ? (uint16_t *)gfxGetFramebuffer(GFX_TOP, GFX_RIGHT, NULL, NULL) : NULL;
 
+    s_tmark = svcGetSystemTick();
     /* The bottom screen: the menu to tap, the match's score and radar, or the
      * controls and credits. */
     if (kind == STEREO_FRAME_MENU) {
@@ -740,6 +746,8 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
         N3DSScr_BottomInfo();
 
     N3DSScr_FlushBottom();
+    s_tBottom += svcGetSystemTick() - s_tmark;
+    s_tmark = svcGetSystemTick();
 
     /* In menus the top screen shows the 3D title scene; the menu is on the bottom. */
     if (kind == STEREO_FRAME_MENU) {
@@ -790,22 +798,40 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
         for (x = 0; x < TOP_W; x++) {
             const int32_t sx = s_xmap[x], sx2 = s_xlast[x];
             uint16_t *pl = outL + x * TOP_H + (TOP_H - 8 - y);
+            if (sx2 == sx) {
+                /* the common column: one source pixel; eight neighbours in memory are
+                 * written as four 32-bit words (the first row of the tile is the highest address) */
+                u32alias *q = (u32alias *)pl;
+                q[0] = (uint32_t)s_pal565[l[7][sx]] | ((uint32_t)s_pal565[l[6][sx]] << 16);
+                q[1] = (uint32_t)s_pal565[l[5][sx]] | ((uint32_t)s_pal565[l[4][sx]] << 16);
+                q[2] = (uint32_t)s_pal565[l[3][sx]] | ((uint32_t)s_pal565[l[2][sx]] << 16);
+                q[3] = (uint32_t)s_pal565[l[1][sx]] | ((uint32_t)s_pal565[l[0][sx]] << 16);
+                if (outR) {
+                    u32alias *qr = (u32alias *)(outR + x * TOP_H + (TOP_H - 8 - y));
+                    qr[0] = (uint32_t)s_pal565[r[7][sx]] | ((uint32_t)s_pal565[r[6][sx]] << 16);
+                    qr[1] = (uint32_t)s_pal565[r[5][sx]] | ((uint32_t)s_pal565[r[4][sx]] << 16);
+                    qr[2] = (uint32_t)s_pal565[r[3][sx]] | ((uint32_t)s_pal565[r[2][sx]] << 16);
+                    qr[3] = (uint32_t)s_pal565[r[1][sx]] | ((uint32_t)s_pal565[r[0][sx]] << 16);
+                }
+                continue;
+            }
             for (k = 0; k < 8; k++) {
                 uint8_t a = l[k][sx];
-                if (sx2 != sx) { uint8_t b2 = l[k][sx2]; if (s_lum[b2] >= BRIGHT_LINE && s_lum[b2] > s_lum[a]) a = b2; }
+                { uint8_t b2 = l[k][sx2]; if (s_lum[b2] >= BRIGHT_LINE && s_lum[b2] > s_lum[a]) a = b2; }
                 pl[7 - k] = s_pal565[a];
             }
             if (outR) {
                 uint16_t *pr = outR + x * TOP_H + (TOP_H - 8 - y);
                 for (k = 0; k < 8; k++) {
                     uint8_t a = r[k][sx];
-                    if (sx2 != sx) { uint8_t b2 = r[k][sx2]; if (s_lum[b2] >= BRIGHT_LINE && s_lum[b2] > s_lum[a]) a = b2; }
+                    { uint8_t b2 = r[k][sx2]; if (s_lum[b2] >= BRIGHT_LINE && s_lum[b2] > s_lum[a]) a = b2; }
                     pr[7 - k] = s_pal565[a];
                 }
             }
         }
     }
 #undef BRIGHT_LINE
+    s_tTop += svcGetSystemTick() - s_tmark;
 
     /* The screen-pinned HUD (score panel, names, numbers) drawn 1:1: every pixel of the sprite is
      * a screen pixel, placed where the scaled picture would have put its corner. */

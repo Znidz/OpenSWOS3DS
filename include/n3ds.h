@@ -41,4 +41,5 @@ int32_t N3DSScr_BottomMode(void);
 void    N3DSScr_TouchToMenu(int32_t tx, int32_t ty, int32_t *mx, int32_t *my);
 #endif
 
+void N3DS_QuitWatchdog(void);
 #endif

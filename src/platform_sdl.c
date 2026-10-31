@@ -1131,6 +1131,9 @@ video_ready:
 
 void Platform_Shutdown(void)
 {
+#ifdef __3DS__
+    N3DS_QuitWatchdog();
+#endif
     if (s_tick_timer) { SDL_RemoveTimer(s_tick_timer); s_tick_timer = 0; }
     if (s_render_mtx) { SDL_DestroyMutex(s_render_mtx); s_render_mtx = NULL; }
     if (s_isr_mtx)    { SDL_DestroyMutex(s_isr_mtx);    s_isr_mtx    = NULL; }
@@ -1599,6 +1602,7 @@ static void pump_events_any_thread(void)
 #ifdef __3DS__
     /* The buttons, and the system: HOME-menu close or power off quits. */
     if (!N3DS_PollInput()) {
+        N3DS_QuitWatchdog();
         Platform_RequestQuit();
         AudioSDL_PauseAndClear();
     }

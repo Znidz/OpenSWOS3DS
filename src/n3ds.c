@@ -92,8 +92,27 @@ void N3DS_EarlyInit(void)
     mkdir(N3DS_USER_DIR, 0777);
 }
 
+/* Quitting must never hang: some thread (audio pump, timer, a menu waiting on a frame
+ * the system no longer shows) can block the orderly teardown. Four seconds after the
+ * quit starts, end the process outright. Idempotent. */
+static void quit_watchdog(void *arg)
+{
+    (void)arg;
+    svcSleepThread(4000000000LL);
+    svcExitProcess();
+}
+
+void N3DS_QuitWatchdog(void)
+{
+    static int started;
+    if (started) return;
+    started = 1;
+    threadCreate(quit_watchdog, NULL, 4096, 0x18, -2, true);
+}
+
 void N3DS_Exit(void)
 {
+    N3DS_QuitWatchdog();
     if (!s_videoUp) return;
     gfxExit();          /* romfs is left to the C runtime's own teardown (SDL's main may own it) */
     s_videoUp = 0;

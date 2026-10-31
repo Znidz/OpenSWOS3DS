@@ -115,5 +115,21 @@ int32_t Stereo_HudDepth(void);
 void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t strength,
                            uint8_t *outL, uint8_t *outR);
 
+
+/* ---- the 3DS checker's hooks ---- */
+enum { STEREO_PROBE_PITCH, STEREO_PROBE_STANDS, STEREO_PROBE_HOARDING, STEREO_PROBE_SPRITE,
+       STEREO_PROBE_HUD, STEREO_PROBE_OVERLAY };
+typedef struct StereoProbe {
+    int32_t kind;          /* STEREO_PROBE_* */
+    int32_t depth;         /* the disparity it was given, 1/8 px */
+    int32_t wx, wy;        /* world position */
+    int32_t idx, bgIdx;    /* palette index drawn, and the pitch's own underneath */
+} StereoProbe;
+int32_t Stereo_Probe(const uint8_t *fb, int32_t w, int32_t x, int32_t y, StereoProbe *p);
+
+typedef struct StereoParam { const char *name; int16_t *value; int16_t step; } StereoParam;
+const StereoParam *Stereo_Params(int32_t *n);
+int32_t Stereo_SaveConfig(void);       /* writes stereo.ini where it was read from */
+
 #endif /* SWOS_SDL_BUILD */
 #endif /* STEREO_H */

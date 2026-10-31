@@ -639,7 +639,29 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
 
 /* Times the present step so the log can say how much of a frame it takes. */
 static uint64_t s_presentTicks, s_presentCalls, s_tBottom, s_tTop, s_tmark;
+static volatile int32_t s_dbgRequest, s_dbgRunning;   /* the 3D checker (n3ds_debug.c) */
+static void debug_modal(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba);
 extern volatile uint16_t _currentGameTick;   /* the 50 Hz game clock (platform_sdl.c) */
+/* The match waits here while the checker is open: this frame, composed again every pass so a
+ * change to the depth settings shows at once, with the checker's cursor and panel over it. */
+static void debug_modal(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
+{
+    s_dbgRequest = 0;
+    s_dbgRunning = 1;
+    N3DSDbg_Open();
+    while (N3DSDbg_Active() && !s_dying && aptMainLoop()) {
+        circlePosition cp;
+        hidScanInput();
+        hidCircleRead(&cp);
+        N3DSDbg_Frame(fb, w, h, (int32_t)(osGet3DSliderState() * 256.0f + 0.5f));
+        N3DSDbg_Input(hidKeysHeld(), hidKeysDown(), cp.dx, cp.dy);
+        present_impl(fb, w, h, rgba);
+        gspWaitForVBlank();
+    }
+    s_dbgRunning = 0;
+    N3DSScr_InvalidateMenu();
+}
+
 void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
 {
     uint64_t t0;
@@ -648,6 +670,8 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
     present_impl(fb, w, h, rgba);
     s_presentTicks += svcGetSystemTick() - t0;
     s_presentCalls++;
+    if (s_dbgRequest && Stereo_FrameKind() == STEREO_FRAME_MATCH)
+        debug_modal(fb, w, h, rgba);
 }
 
 static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
@@ -699,7 +723,7 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
             return;
         if (!t0) t0 = now;
         shown++;
-        if (now - t0 >= 5000) {
+        if (now - t0 >= 5000 && !s_dbgRunning) {
             /* ticks are 268.1 MHz: ms per call = ticks / 268111 / calls */
             uint64_t calls = s_presentCalls ? s_presentCalls : 1;
             uint32_t tenthsMs = (uint32_t)(s_presentTicks * 10 / 268111 / calls);
@@ -745,6 +769,8 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
     else
         N3DSScr_BottomInfo();
 
+    if (s_dbgRunning)
+        N3DSDbg_DrawBottom();
     N3DSScr_FlushBottom();
     s_tBottom += svcGetSystemTick() - s_tmark;
     s_tmark = svcGetSystemTick();
@@ -857,6 +883,9 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
             }
         }
     }
+    if (s_dbgRunning)
+        N3DSDbg_DrawTop(outL, outR);
+
     /* How much of the top picture is the same as the frame before? Looked at on one frame in 64
      * (the frame and the one after it), in 16-byte blocks, so it costs next to nothing; the log
      * says what share never changed (a delta against the last frame could skip that much). */
@@ -1064,7 +1093,10 @@ int32_t N3DS_PollInput(void)
 
     /* Raw Amiga scancodes, as the pad's buttons send them (input_sdl.c k_padKeys). */
     if (down & KEY_START)  InputSDL_TouchKey(0x19);     /* P   pause                */
-    if (down & KEY_SELECT) InputSDL_TouchKey(0x21);     /* S   statistics           */
+    if ((down & KEY_SELECT) && (held & KEY_L))
+        s_dbgRequest = 1;                               /* L + SELECT: the 3D checker */
+    else if (down & KEY_SELECT)
+        InputSDL_TouchKey(0x21);                        /* S   statistics           */
     if (down & KEY_Y)      InputSDL_TouchKey(0x13);     /* R   instant replay       */
     if (down & KEY_X)      InputSDL_TouchKey(0x25);     /* H   replay after match   */
     if ((down & (KEY_L | KEY_R)) && (held & KEY_L) && (held & KEY_R))

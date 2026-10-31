@@ -152,8 +152,34 @@ static void set_key(const char *k, int32_t v)
     else fprintf(stderr, "[stereo] stereo.ini: unknown key '%s'\n", k);
 }
 
+static void write_cfg(FILE *f)
+{
+    fprintf(f, "; OpenSWOS 3D depth settings. Units: 1/8 pixel of disparity.\n"
+               "; Positive comes out of the screen, negative goes into it.\n"
+               "pitch_far = %d\npitch_near = %d\n"
+               "; depth per pixel of height above the pitch, in 1/64 pixel\n"
+               "height_gain = %d\nhud = %d\noverlay = %d\nlimit = %d\n"
+               "; menus: the backdrop, text and pictures, buttons, the highlighted button\n"
+               "menu_back = %d\nmenu_text = %d\nmenu_button = %d\nmenu_selected = %d\n"
+               "; the stands round the pitch (how far out; where they start past the lines) and the goals\n"
+               "stands_rise = %d\nstands_margin = %d\ngoal_rise = %d\n"
+               "; tiers: rows per tier, depth per tier, the most; the advertising boards: depth, top and bottom world rows\n"
+               "tier_rows = %d\ntier_step = %d\nstands_max = %d\nhoard_rise = %d\nhoard_y0 = %d\nhoard_y1 = %d\nhoard_y2 = %d\nhoard_y3 = %d\n",
+            g_stereoCfg.pitchFar, g_stereoCfg.pitchNear, g_stereoCfg.heightGain,
+            g_stereoCfg.hud, g_stereoCfg.overlay, g_stereoCfg.limit,
+            g_stereoCfg.menuBack, g_stereoCfg.menuText, g_stereoCfg.menuButton,
+            g_stereoCfg.menuSelected, g_stereoCfg.standsRise, g_stereoCfg.standsMargin,
+            g_stereoCfg.goalRise, g_stereoCfg.tierRows, g_stereoCfg.tierStep,
+            g_stereoCfg.standsMax, g_stereoCfg.hoardRise, g_stereoCfg.hoardY0,
+            g_stereoCfg.hoardY1, g_stereoCfg.hoardY2, g_stereoCfg.hoardY3);
+
+}
+
+static char s_cfgDir[512];
+
 void Stereo_LoadConfig(const char *dir)
 {
+    snprintf(s_cfgDir, sizeof s_cfgDir, "%s", dir ? dir : ".");
     char path[1024], line[256];
     FILE *f;
     snprintf(path, sizeof path, "%s/stereo.ini", dir ? dir : ".");
@@ -162,24 +188,7 @@ void Stereo_LoadConfig(const char *dir)
         /* Write the defaults so there is a file to edit. */
         f = fopen(path, "w");
         if (f) {
-            fprintf(f, "; OpenSWOS 3D depth settings. Units: 1/8 pixel of disparity.\n"
-                       "; Positive comes out of the screen, negative goes into it.\n"
-                       "pitch_far = %d\npitch_near = %d\n"
-                       "; depth per pixel of height above the pitch, in 1/64 pixel\n"
-                       "height_gain = %d\nhud = %d\noverlay = %d\nlimit = %d\n"
-                       "; menus: the backdrop, text and pictures, buttons, the highlighted button\n"
-                       "menu_back = %d\nmenu_text = %d\nmenu_button = %d\nmenu_selected = %d\n"
-                       "; the stands round the pitch (how far out; where they start past the lines) and the goals\n"
-                       "stands_rise = %d\nstands_margin = %d\ngoal_rise = %d\n"
-                       "; tiers: rows per tier, depth per tier, the most; the advertising boards: depth, top and bottom world rows\n"
-                       "tier_rows = %d\ntier_step = %d\nstands_max = %d\nhoard_rise = %d\nhoard_y0 = %d\nhoard_y1 = %d\nhoard_y2 = %d\nhoard_y3 = %d\n",
-                    g_stereoCfg.pitchFar, g_stereoCfg.pitchNear, g_stereoCfg.heightGain,
-                    g_stereoCfg.hud, g_stereoCfg.overlay, g_stereoCfg.limit,
-                    g_stereoCfg.menuBack, g_stereoCfg.menuText, g_stereoCfg.menuButton,
-                    g_stereoCfg.menuSelected, g_stereoCfg.standsRise, g_stereoCfg.standsMargin,
-                    g_stereoCfg.goalRise, g_stereoCfg.tierRows, g_stereoCfg.tierStep,
-                    g_stereoCfg.standsMax, g_stereoCfg.hoardRise, g_stereoCfg.hoardY0,
-                    g_stereoCfg.hoardY1, g_stereoCfg.hoardY2, g_stereoCfg.hoardY3);
+            write_cfg(f);
             fclose(f);
         }
         return;
@@ -812,3 +821,98 @@ void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t stre
 }
 
 #endif /* SWOS_SDL_BUILD */
+
+/* ---- the checker's hooks (3DS debug screen) ----------------------------------- */
+
+int32_t Stereo_SaveConfig(void)
+{
+    char path[1100];
+    FILE *f;
+    snprintf(path, sizeof path, "%s/stereo.ini", s_cfgDir[0] ? s_cfgDir : ".");
+    f = fopen(path, "w");
+    if (!f) return 0;
+    write_cfg(f);
+    fclose(f);
+    return 1;
+}
+
+static const StereoParam k_params[] = {
+    { "PITCH FAR",     &g_stereoCfg.pitchFar,     4 },
+    { "PITCH NEAR",    &g_stereoCfg.pitchNear,    4 },
+    { "HEIGHT GAIN",   &g_stereoCfg.heightGain,   2 },
+    { "HUD",           &g_stereoCfg.hud,          2 },
+    { "OVERLAY",       &g_stereoCfg.overlay,      2 },
+    { "STANDS RISE",   &g_stereoCfg.standsRise,   4 },
+    { "STANDS MARGIN", &g_stereoCfg.standsMargin, 2 },
+    { "TIER ROWS",     &g_stereoCfg.tierRows,     1 },
+    { "TIER STEP",     &g_stereoCfg.tierStep,     1 },
+    { "STANDS MAX",    &g_stereoCfg.standsMax,    4 },
+    { "HOARD RISE",    &g_stereoCfg.hoardRise,    4 },
+    { "HOARD TOP",     &g_stereoCfg.hoardY0,      1 },
+    { "HOARD BOTTOM",  &g_stereoCfg.hoardY1,      1 },
+    { "HOARD 2 TOP",   &g_stereoCfg.hoardY2,      1 },
+    { "HOARD 2 BOT",   &g_stereoCfg.hoardY3,      1 },
+    { "GOAL RISE",     &g_stereoCfg.goalRise,     4 },
+    { "LIMIT",         &g_stereoCfg.limit,        8 },
+};
+
+const StereoParam *Stereo_Params(int32_t *n)
+{
+    *n = (int32_t)(sizeof k_params / sizeof k_params[0]);
+    return k_params;
+}
+
+/* What is at source pixel (x, y) of the presented frame: which part of the model drew it and
+ * the depth it was given (1/8 px). */
+int32_t Stereo_Probe(const uint8_t *fb, int32_t w, int32_t x, int32_t y, StereoProbe *p)
+{
+    StereoSlot *s = slot_for(fb, 0);
+    int32_t base, wy, wx;
+    memset(p, 0, sizeof *p);
+    if (!s || x < 0 || x >= w || y < 0 || y >= _screen_height)
+        return 0;
+    base = y * w;
+    wx = x + (int32_t)Render_CameraX();
+    wy = y + (int32_t)Render_CameraY();
+    p->wx = wx;
+    p->wy = wy;
+    p->idx = fb[base + x];
+    p->bgIdx = s->bg[base + x];
+    if (s->hudMask[base + x]) {
+        p->kind = STEREO_PROBE_HUD;
+        p->depth = Stereo_HudDepth();
+        return 1;
+    }
+    if (fb[base + x] == s->stamp[base + x] && s->dep[base + x] != STEREO_DEPTH_PITCH) {
+        p->kind = STEREO_PROBE_SPRITE;
+        p->depth = s->dep[base + x];
+        return 1;
+    }
+    if (fb[base + x] != s->stamp[base + x]) {
+        p->kind = STEREO_PROBE_OVERLAY;
+        p->depth = clamp_depth(g_stereoCfg.overlay);
+        return 1;
+    }
+    {
+        const int32_t m = g_stereoCfg.standsMargin;
+        int32_t rise = 0;
+        p->kind = STEREO_PROBE_PITCH;
+        if (g_stereoCfg.hoardRise != 0 &&
+            ((wy >= g_stereoCfg.hoardY0 && wy <= g_stereoCfg.hoardY1) ||
+             (wy >= g_stereoCfg.hoardY2 && wy <= g_stereoCfg.hoardY3))) {
+            const int32_t top = wy >= g_stereoCfg.hoardY0 && wy <= g_stereoCfg.hoardY1;
+            p->kind = STEREO_PROBE_HOARDING;
+            p->depth = clamp_depth(ground_depth(y) + g_stereoCfg.hoardRise
+                                   + (top ? g_stereoCfg.hoardY1 - wy : g_stereoCfg.hoardY3 - wy) * 2);
+            return 1;
+        }
+        if (g_stereoCfg.standsRise != 0) {
+            rise = terrain_rise_y(wy);
+            if (rise == 0 && (wx < STEREO_FIELD_X0 - m))        rise = tier_rise((STEREO_FIELD_X0 - m) - wx);
+            else if (rise == 0 && (wx > STEREO_FIELD_X1 + m))   rise = tier_rise(wx - (STEREO_FIELD_X1 + m));
+            if (rise) p->kind = STEREO_PROBE_STANDS;
+        }
+        p->depth = clamp_depth(ground_depth(y) + rise);
+    }
+    return 1;
+}

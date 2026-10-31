@@ -39,6 +39,14 @@ void    N3DSScr_BottomMatch(const uint16_t *pal);
 void    N3DSScr_BottomInfo(void);
 int32_t N3DSScr_BottomMode(void);
 void    N3DSScr_TouchToMenu(int32_t tx, int32_t ty, int32_t *mx, int32_t *my);
+
+/* src/n3ds_debug.c: the 3D checker and the tuning page (L + SELECT in a match) */
+void    N3DSDbg_Open(void);
+int32_t N3DSDbg_Active(void);
+void    N3DSDbg_Frame(const uint8_t *fb, int32_t w, int32_t h, int32_t strength);
+void    N3DSDbg_Input(uint32_t held, uint32_t down, int32_t padX, int32_t padY);
+void    N3DSDbg_DrawTop(uint16_t *left, uint16_t *right);
+void    N3DSDbg_DrawBottom(void);
 #endif
 
 void N3DS_QuitWatchdog(void);

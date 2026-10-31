@@ -857,6 +857,31 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
             }
         }
     }
+    /* How much of the top picture is the same as the frame before? Looked at on one frame in 64
+     * (the frame and the one after it), in 16-byte blocks, so it costs next to nothing; the log
+     * says what share never changed (a delta against the last frame could skip that much). */
+    {
+        static uint16_t prev[TOP_W * TOP_H] __attribute__((aligned(16)));
+        static uint32_t frameNo, same, total;
+        const uint32_t phase = frameNo++ & 63;
+        if (phase == 0 || phase == 1) {
+            if (phase == 1) {
+                const uint32_t *a = (const uint32_t *)outL, *b = (const uint32_t *)prev;
+                uint32_t i, n = TOP_W * TOP_H / 8;     /* 16 bytes each */
+                for (i = 0; i < n; i++) {
+                    if (a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3]) same++;
+                    a += 4; b += 4;
+                    total++;
+                }
+            }
+            memcpy(prev, outL, sizeof prev);
+        }
+        if (phase == 1 && total > 4 * (TOP_W * TOP_H / 8)) {
+            fprintf(stderr, "[delta] %u%% of the top picture's 16-byte blocks equal the frame before\n",
+                    (unsigned)(same * 100 / total));
+            same = total = 0;
+        }
+    }
     gfxFlushBuffers();
     gfxSwapBuffers();
 }

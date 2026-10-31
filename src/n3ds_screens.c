@@ -382,6 +382,7 @@ void N3DSScr_BottomMenu(const uint8_t *fb, int32_t w, const uint16_t *pal, int32
     uint16_t line[BOT_W];
     uint16_t *out = bottom_fb();
     int32_t x, y, margin = (w - 336) / 2, changed = s_menuDirty;
+    int32_t dstLo = 0, dstHi = SCR_H;
     if (margin < 0) margin = 0;
     s_bottomMode = N3DS_BOTTOM_MENU;
     if (!out || w < 336)
@@ -406,17 +407,27 @@ void N3DSScr_BottomMenu(const uint8_t *fb, int32_t w, const uint16_t *pal, int32
         memcpy(prevPal, pal, sizeof prevPal);
         changed = 1;
     }
-    for (y = 0; y < 272; y++) {
-        const uint8_t *row = fb + y * w + margin;
-        if (memcmp(prev + y * 336, row, 336)) {
-            memcpy(prev + y * 336, row, 336);
-            changed = 1;
+    {
+        int32_t lo = 272, hi = -1;
+        for (y = 0; y < 272; y++) {
+            const uint8_t *row = fb + y * w + margin;
+            if (memcmp(prev + y * 336, row, 336)) {
+                memcpy(prev + y * 336, row, 336);
+                if (y < lo) lo = y;
+                hi = y;
+            }
         }
+        if (hi >= 0 && !changed) {            /* only the screen rows that read a changed row */
+            for (y = 0; y < SCR_H && yi[y] + 1 < lo; y++) ;
+            dstLo = y;
+            for (dstHi = SCR_H; dstHi > dstLo && yi[dstHi - 1] > hi; dstHi--) ;
+        }
+        if (hi >= 0) changed = 1;
     }
     if (!changed)
         return;
     s_menuDirty = 0;
-    for (y = 0; y < SCR_H; y++) {
+    for (y = dstLo; y < dstHi; y++) {
         const uint8_t *r0 = prev + yi[y] * 336;
         const uint8_t *r1 = r0 + 336;
         const uint32_t wy = yw[y];

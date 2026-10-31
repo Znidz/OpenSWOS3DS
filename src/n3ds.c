@@ -60,6 +60,7 @@ u32 __stacksize__ = 1024 * 1024;
 
 static int32_t  s_videoUp;
 static int32_t  s_3dOn = -1;
+static int32_t  s_oldModel, s_presentTick;
 static uint16_t s_pal565[256];
 static uint16_t s_xmap[TOP_W];
 static int32_t  s_xmapFor;
@@ -71,7 +72,12 @@ static PrintConsole s_console;
 
 void N3DS_EarlyInit(void)
 {
-    osSetSpeedupEnable(true);           /* New 3DS: 804 MHz and the L2 cache */
+    {
+        bool isNew = false;
+        osSetSpeedupEnable(true);       /* New 3DS: 804 MHz and the L2 cache */
+        APT_CheckNew3DS(&isNew);
+        s_oldModel = !isNew;            /* 268 MHz: show every other frame, see N3DS_Present */
+    }
     gfxInitDefault();
     gfxSetScreenFormat(GFX_TOP, GSP_RGB565_OES);
     gfxSetDoubleBuffering(GFX_TOP, true);
@@ -559,6 +565,11 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
     int32_t x, y, strength, depth, kind;
 
     if (!s_videoUp || !fb || w <= 0 || h <= 0 || w > FRONTBUFFER_MAX_STRIDE_BYTES)
+        return;
+
+    /* An original 3DS cannot compose two eyes at the game's rate; showing every other frame
+     * keeps the game itself at full speed (the match is still simulated every frame). */
+    if (s_oldModel && (s_presentTick++ & 1))
         return;
 
     for (x = 0; x < 256; x++) {

@@ -567,8 +567,6 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
     if (!s_videoUp || !fb || w <= 0 || h <= 0 || w > FRONTBUFFER_MAX_STRIDE_BYTES)
         return;
 
-    /* An original 3DS cannot compose two eyes at the game's rate; showing every other frame
-     * keeps the game itself at full speed (the match is still simulated every frame). */
     for (x = 0; x < 256; x++) {
         const uint8_t *c = rgba + x * 4;
         s_pal565[x] = (uint16_t)(((c[0] >> 3) << 11) | ((c[1] >> 2) << 5) | (c[2] >> 3));

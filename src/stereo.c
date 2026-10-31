@@ -219,7 +219,7 @@ void Stereo_BeginSprite(const Sprite *spr, const SpriteGraphics *g)
          * by Stereo_SetRows once both are placed. */
         s_cur = CUR_BALL;
         s_mode = MODE_FLAT;
-        s_flatDepth = clamp_depth(ground_depth(s_shadowCentre));
+        s_flatDepth = clamp_depth(ground_depth(s_shadowCentre) + g_stereoCfg.heightGain / 4);
     } else {
         s_mode = MODE_UPRIGHT;     /* players, keepers, referee, goals, flags */
     }
@@ -234,7 +234,10 @@ void Stereo_SetRows(int32_t top, int32_t bottom)
     } else if (s_cur == CUR_BALL) {
         int32_t lift = s_shadowCentre - (top + bottom) / 2;   /* rows above its shadow */
         if (lift < 0) lift = 0;
-        s_flatDepth = clamp_depth(ground_depth(s_shadowCentre) + g_stereoCfg.heightGain * lift / 8);
+        /* An object with height like a player: a card standing at its contact point (the
+         * shadow), as proud of the ground as a player is, then raised by its flight. */
+        s_flatDepth = clamp_depth(ground_depth(s_shadowCentre) + g_stereoCfg.heightGain / 4
+                                  + g_stereoCfg.heightGain * lift / 8);
     }
 }
 

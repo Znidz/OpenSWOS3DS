@@ -24,6 +24,7 @@
 #include "n3ds.h"
 #include "game_types.h"
 #include "display.h"
+#include "menu_system.h"
 
 #define TOP_W  400
 #define BOT_W  320
@@ -359,6 +360,46 @@ int32_t N3DSScr_BottomMode(void)
 
 /* The menu, scaled to fit: the menu's own 336 x 272 to the screen's 320 x 240. */
 static int32_t s_menuDirty = 1;
+
+/* Where on the bottom screen the menu sits. Every menu's entries fit 320 x 240 of the 336 x 272
+ * picture, so the screen shows that window pixel for pixel -- no scaling, nothing resampled.
+ * A menu that does not fit falls back to the scaled picture. */
+static int32_t s_winOx, s_winOy, s_winExact;
+extern uint8_t  _currentMenu[];
+extern MenuEntry _menuEntries[];
+
+static void pick_menu_window(void)
+{
+    const Menu *menu = (const Menu *)_currentMenu;
+    int32_t i, n = menu->numEntries, x0 = 9999, y0 = 9999, x1 = -1, y1 = -1;
+    int32_t ox = 8, oy = 0, exact = 0;
+    if (n > 0 && n < 256) {
+        for (i = 0; i < n; i++) {
+            const MenuEntry *e = (const MenuEntry *)((const uint8_t *)_menuEntries + i * MENUENTRY_STRIDE);
+            if (e->isInvisible || !e->dwWidth || !e->dwHeight)
+                continue;
+            if (e->x < x0) x0 = e->x;
+            if (e->y < y0) y0 = e->y;
+            if (e->x + e->dwWidth > x1) x1 = e->x + e->dwWidth;
+            if (e->y + e->dwHeight > y1) y1 = e->y + e->dwHeight;
+        }
+        if (x1 > 0 && x0 >= 0 && y0 >= 0 && x1 <= 336 && y1 <= 272) {
+            /* as much of the top as the bottom entry allows */
+            oy = y1 + 4 - SCR_H;
+            if (oy < 0) oy = 0;
+            if (oy > y0) oy = y0;
+            ox = 8;
+            if (x0 < ox) ox = x0;
+            if (x1 > ox + BOT_W) ox = x1 - BOT_W;
+            if (ox < 0) ox = 0;
+            if (ox > 16) ox = 16;
+            exact = (x0 >= ox && x1 <= ox + BOT_W && y0 >= oy && y1 <= oy + SCR_H);
+        }
+    }
+    if (ox != s_winOx || oy != s_winOy || exact != s_winExact)
+        s_menuDirty = 1;
+    s_winOx = ox; s_winOy = oy; s_winExact = exact;
+}
 void N3DSScr_InvalidateMenu(void) { s_menuDirty = 1; }
 
 /* Two packed RGB565 pixels blended, weight 0..32 of b. */
@@ -424,9 +465,22 @@ void N3DSScr_BottomMenu(const uint8_t *fb, int32_t w, const uint16_t *pal, int32
         }
         if (hi >= 0) changed = 1;
     }
+    pick_menu_window();
+    changed |= s_menuDirty;
     if (!changed)
         return;
     s_menuDirty = 0;
+    if (s_winExact) {
+        for (x = 0; x < BOT_W; x++) {
+            uint16_t *col = out + x * SCR_H;
+            const uint8_t *src = prev + s_winOy * 336 + s_winOx + x;
+            for (y = 0; y < SCR_H; y++)
+                col[SCR_H - 1 - y] = pal[src[y * 336]];
+        }
+        if (mainMenu)
+            N3DSScr_SeasonTab();
+        return;
+    }
     for (y = dstLo; y < dstHi; y++) {
         const uint8_t *r0 = prev + yi[y] * 336;
         const uint8_t *r1 = r0 + 336;
@@ -473,6 +527,11 @@ void N3DSScr_SeasonTab(void)
 /* Map a touch on the bottom screen to the menu's own coordinates. */
 void N3DSScr_TouchToMenu(int32_t tx, int32_t ty, int32_t *mx, int32_t *my)
 {
+    if (s_winExact) {
+        *mx = s_winOx + tx;
+        *my = s_winOy + ty;
+        return;
+    }
     *mx = tx * 336 / BOT_W;
     *my = ty * 272 / SCR_H;
 }

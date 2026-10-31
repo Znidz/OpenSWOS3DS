@@ -29,7 +29,14 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef __3DS__
+/* 268 MHz: the music is synthesised on the CPU, and at 44.1 kHz it cannot keep the queue
+ * full beside the 3D drawing (the crackle). Half the rate halves the mixing; the Amiga's own
+ * output was near 28 kHz anyway. */
+#define AUDIO_SAMPLE_RATE 22050
+#else
 #define AUDIO_SAMPLE_RATE 44100
+#endif
 
 static SDL_AudioDeviceID s_audio_dev;
 static SDL_AudioSpec     s_audio_spec;
@@ -121,6 +128,8 @@ static int16_t           s_out_buf[48000 * 2 / 50 + 128];
  * Platform_RenderFrame) instead of the native silence-pad. */
 #ifdef SWOS_WASM_BUILD
 #define QUEUE_TARGET_MS  120
+#elif defined(__3DS__)
+#define QUEUE_TARGET_MS  200      /* rides out a long frame of 3D drawing */
 #else
 #define QUEUE_TARGET_MS  80
 #endif

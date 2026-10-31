@@ -597,6 +597,7 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
 
 /* Times the present step so the log can say how much of a frame it takes. */
 static uint64_t s_presentTicks, s_presentCalls;
+extern volatile uint16_t _currentGameTick;   /* the 50 Hz game clock (platform_sdl.c) */
 void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
 {
     uint64_t t0 = svcGetSystemTick();
@@ -658,7 +659,13 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
             /* ticks are 268.1 MHz: ms per call = ticks / 268111 / calls */
             uint64_t calls = s_presentCalls ? s_presentCalls : 1;
             uint32_t tenthsMs = (uint32_t)(s_presentTicks * 10 / 268111 / calls);
-            fprintf(stderr, "[fps] %d.%d shown/s (%s, %s) present %u.%u ms/call, %u calls\n",
+            static uint16_t lastGameTick;
+            uint32_t gameTicks = (uint16_t)(_currentGameTick - lastGameTick);   /* 50 a second is real time */
+            lastGameTick = _currentGameTick;
+            fprintf(stderr, "[fps] game clock %u.%u ticks/s (50 = real time); "
+                            "%d.%d shown/s (%s, %s) present %u.%u ms/call, %u calls\n",
+                    (unsigned)(gameTicks * 1000 / (uint32_t)(now - t0)),
+                    (unsigned)(gameTicks * 10000 / (uint32_t)(now - t0) % 10),
                     (int)(shown * 1000 / (now - t0)), (int)(shown * 10000 / (now - t0) % 10),
                     kind == STEREO_FRAME_MATCH ? "match" : "menu", s_oldModel ? "old 3DS" : "new 3DS",
                     (unsigned)(tenthsMs / 10), (unsigned)(tenthsMs % 10), (unsigned)s_presentCalls);

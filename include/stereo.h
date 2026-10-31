@@ -60,6 +60,12 @@ typedef struct StereoConfig {
     int16_t standsRise;   /* the stands round the pitch stand this far out      */
     int16_t standsMargin; /* ... starting this many pitch pixels past the lines */
     int16_t goalRise;     /* goals: how far their base stands out; they lean on */
+    int16_t tierRows;     /* stands: each tier is this many pitch pixels deep   */
+    int16_t tierStep;     /* ... and stands this much further out than the last */
+    int16_t standsMax;    /* ... up to this much (1/8 px) beyond the first tier */
+    int16_t hoardRise;    /* advertising boards: stand this far out of the pitch */
+    int16_t hoardY0;      /* ... the world rows they cover (top .. bottom)      */
+    int16_t hoardY1;
 } StereoConfig;
 
 extern int32_t       g_stereoOn;        /* depth is being recorded */

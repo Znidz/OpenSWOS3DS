@@ -55,6 +55,12 @@ StereoConfig g_stereoCfg = {
      48,    /* standsRise: the stands 6 px out                    */
      40,    /* standsMargin: pitch pixels past the touchlines     */
      24,    /* goalRise: a goal's base 3 px out, its bar further  */
+     14,    /* tierRows: a tier of seating is 14 pitch rows deep  */
+      8,    /* tierStep: each tier 1 px further out than the last */
+     40,    /* standsMax: the top tier 5 px beyond the first      */
+     40,    /* hoardRise: the boards 5 px out of the pitch        */
+     98,    /* hoardY0: the boards' top row (world)               */
+    109,    /* hoardY1: their bottom row (world)                  */
 };
 
 /* Where sprites were drawn, per row: a few [x0,x1) intervals, merged as they come. Present
@@ -133,6 +139,12 @@ static void set_key(const char *k, int32_t v)
     else if (!strcmp(k, "stands_rise"))   g_stereoCfg.standsRise   = (int16_t)v;
     else if (!strcmp(k, "stands_margin")) g_stereoCfg.standsMargin = (int16_t)v;
     else if (!strcmp(k, "goal_rise"))     g_stereoCfg.goalRise     = (int16_t)v;
+    else if (!strcmp(k, "tier_rows"))     g_stereoCfg.tierRows     = (int16_t)v;
+    else if (!strcmp(k, "tier_step"))     g_stereoCfg.tierStep     = (int16_t)v;
+    else if (!strcmp(k, "stands_max"))    g_stereoCfg.standsMax    = (int16_t)v;
+    else if (!strcmp(k, "hoard_rise"))    g_stereoCfg.hoardRise    = (int16_t)v;
+    else if (!strcmp(k, "hoard_y0"))      g_stereoCfg.hoardY0      = (int16_t)v;
+    else if (!strcmp(k, "hoard_y1"))      g_stereoCfg.hoardY1      = (int16_t)v;
     else fprintf(stderr, "[stereo] stereo.ini: unknown key '%s'\n", k);
 }
 
@@ -154,12 +166,16 @@ void Stereo_LoadConfig(const char *dir)
                        "; menus: the backdrop, text and pictures, buttons, the highlighted button\n"
                        "menu_back = %d\nmenu_text = %d\nmenu_button = %d\nmenu_selected = %d\n"
                        "; the stands round the pitch (how far out; where they start past the lines) and the goals\n"
-                       "stands_rise = %d\nstands_margin = %d\ngoal_rise = %d\n",
+                       "stands_rise = %d\nstands_margin = %d\ngoal_rise = %d\n"
+                       "; tiers: rows per tier, depth per tier, the most; the advertising boards: depth, top and bottom world rows\n"
+                       "tier_rows = %d\ntier_step = %d\nstands_max = %d\nhoard_rise = %d\nhoard_y0 = %d\nhoard_y1 = %d\n",
                     g_stereoCfg.pitchFar, g_stereoCfg.pitchNear, g_stereoCfg.heightGain,
                     g_stereoCfg.hud, g_stereoCfg.overlay, g_stereoCfg.limit,
                     g_stereoCfg.menuBack, g_stereoCfg.menuText, g_stereoCfg.menuButton,
                     g_stereoCfg.menuSelected, g_stereoCfg.standsRise, g_stereoCfg.standsMargin,
-                    g_stereoCfg.goalRise);
+                    g_stereoCfg.goalRise, g_stereoCfg.tierRows, g_stereoCfg.tierStep,
+                    g_stereoCfg.standsMax, g_stereoCfg.hoardRise, g_stereoCfg.hoardY0,
+                    g_stereoCfg.hoardY1);
             fclose(f);
         }
         return;
@@ -236,6 +252,28 @@ static int32_t ground_depth(int32_t y)
     if (y < 0) y = 0;
     if (y > h) y = h;
     return g_stereoCfg.pitchFar + (g_stereoCfg.pitchNear - g_stereoCfg.pitchFar) * y / h;
+}
+
+/* How far the terrain at distance `out` pitch pixels past the stands' start stands out of
+ * the pitch: the first tier at standsRise, then a step per tier, up to standsMax more. */
+static int32_t tier_rise(int32_t out)
+{
+    int32_t rows = g_stereoCfg.tierRows > 0 ? g_stereoCfg.tierRows : 1;
+    int32_t up;
+    if (out < 0) out = 0;
+    up = (out / rows) * g_stereoCfg.tierStep;
+    if (up > g_stereoCfg.standsMax) up = g_stereoCfg.standsMax;
+    return g_stereoCfg.standsRise + up;
+}
+
+/* The terrain's rise at world row wy above or below the pitch (0 on and near the pitch). */
+static int32_t terrain_rise_y(int32_t wy)
+{
+    const int32_t m = g_stereoCfg.standsMargin;
+    if (g_stereoCfg.standsRise == 0) return 0;
+    if (wy < STEREO_FIELD_Y0 - m) return tier_rise((STEREO_FIELD_Y0 - m) - wy);
+    if (wy > STEREO_FIELD_Y1 + m) return tier_rise(wy - (STEREO_FIELD_Y1 + m));
+    return 0;
 }
 
 void Stereo_PitchDrawn(const uint8_t *fb)
@@ -379,10 +417,11 @@ void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
         int32_t feet = s_isGoal ? s_groundRow : (s_rowBottom >= 0 ? s_rowBottom : s_groundRow);
         int32_t h = feet - y;                      /* rows above the feet */
         if (h < 0) h = 0;
+        int32_t base = terrain_rise_y(feet + (int32_t)Render_CameraY());  /* up on the terraces */
         if (s_isGoal)       /* a goal: its base out, the bar further, the net in between */
-            d = clamp_depth(ground_depth(feet) + g_stereoCfg.goalRise + h * 3);
+            d = clamp_depth(ground_depth(feet) + base + g_stereoCfg.goalRise + h * 3);
         else                /* a player leans out: feet near the ground, the head ~2 px out */
-            d = clamp_depth(ground_depth(feet) + g_stereoCfg.heightGain / 2 + h * g_stereoCfg.heightGain / 16);
+            d = clamp_depth(ground_depth(feet) + base + g_stereoCfg.heightGain / 2 + h * g_stereoCfg.heightGain / 16);
     }
     {
         int32_t lo = dstX < 0 ? 0 : dstX, hi = dstX + sprW > w ? w : dstX + sprW;
@@ -683,8 +722,8 @@ void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t stre
         const int32_t wy = y + (int32_t)Render_CameraY();
         const int32_t left = (STEREO_FIELD_X0 - m) - (int32_t)Render_CameraX();
         const int32_t right = (STEREO_FIELD_X1 + m) - (int32_t)Render_CameraX();
-        int32_t sd = clamp_depth(ground_depth(y) + g_stereoCfg.standsRise), se = eye_shift(sd, strength);
         int32_t seg[2][2] = { { 0, 0 }, { 0, 0 } }, k;
+        int32_t rowRise = terrain_rise_y(wy);
         if (wy < STEREO_FIELD_Y0 - m || wy > STEREO_FIELD_Y1 + m) {
             seg[0][1] = w;
         } else {
@@ -693,13 +732,40 @@ void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t stre
         }
         for (k = 0; k < 2; k++) {
             int32_t a = seg[k][0], b = seg[k][1];
+            int32_t lastRise = -9999, sd = 0, se = 0;
             for (x = a; x < b; x++) {
-                int32_t sl = x - se, sr = x + se;
+                int32_t sl, sr, rise = rowRise;
+                if (rise == 0 && k == 0) rise = tier_rise((STEREO_FIELD_X0 - m) - ((int32_t)Render_CameraX() + x));
+                else if (rise == 0)      rise = tier_rise(((int32_t)Render_CameraX() + x) - (STEREO_FIELD_X1 + m));
+                if (rise != lastRise) {
+                    lastRise = rise;
+                    sd = clamp_depth(ground_depth(y) + rise);
+                    se = eye_shift(sd, strength);
+                }
+                sl = x - se; sr = x + se;
                 if (sl < 0) sl = 0; else if (sl >= w) sl = w - 1;
                 if (sr < 0) sr = 0; else if (sr >= w) sr = w - 1;
                 outL[x] = bg[sl];
                 outR[x] = bg[sr];
                 zL[x] = zR[x] = (int8_t)sd;
+            }
+        }
+    }
+
+    /* The advertising boards: a wall standing out of the pitch, its top further out. */
+    if (g_stereoCfg.hoardRise != 0) {
+        const int32_t wy = y + (int32_t)Render_CameraY();
+        if (wy >= g_stereoCfg.hoardY0 && wy <= g_stereoCfg.hoardY1) {
+            int32_t hd = clamp_depth(ground_depth(y) + g_stereoCfg.hoardRise
+                                     + (g_stereoCfg.hoardY1 - wy) * 2);
+            int32_t he = eye_shift(hd, strength);
+            for (x = 0; x < w; x++) {
+                int32_t sl = x - he, sr = x + he;
+                if (sl < 0) sl = 0; else if (sl >= w) sl = w - 1;
+                if (sr < 0) sr = 0; else if (sr >= w) sr = w - 1;
+                outL[x] = bg[sl];
+                outR[x] = bg[sr];
+                zL[x] = zR[x] = (int8_t)hd;
             }
         }
     }

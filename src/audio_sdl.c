@@ -437,9 +437,18 @@ void AudioSDL_Tick(void)
  * an underrun never has time to form; AudioSDL_Tick's own target check stops it
  * from over-filling (it returns early once QUEUE_TARGET_MS is buffered). The 5 ms
  * sleep keeps CPU negligible — most wake-ups just see a full queue and return. */
+#ifdef __3DS__
+extern int svcSetThreadPriority(unsigned int thread, int prio);   /* libctru */
+#endif
 static int audio_pump_thread(void *unused)
 {
     (void)unused;
+#ifdef __3DS__
+    /* One core runs the game and this: at the game's own priority the pump only gets a turn when
+     * the picture is finished, so a long frame leaves the queue empty and the music crackles.
+     * Above it, the pump runs the moment it wakes (0x30 is the game's; lower is higher). */
+    svcSetThreadPriority(0xFFFF8000u, 0x19);
+#endif
     while (s_pump_run) {
         AudioSDL_Tick();
         SDL_Delay(5);

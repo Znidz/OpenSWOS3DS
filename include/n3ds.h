@@ -14,6 +14,7 @@ void    N3DS_VideoReady(void);                   /* the game is about to draw */
 void    N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba);
 int32_t N3DS_PollInput(void);                    /* 0: the system asked us to quit */
 void    N3DS_Exit(void);
+void    N3DS_Loading(const char *what, int32_t percent);   /* start-up progress screen */
 /* A tap on the menu (bottom screen), in the menu's own coordinates. 1 when there was one. */
 int32_t N3DS_TakeMenuTap(int32_t *x, int32_t *y);
 

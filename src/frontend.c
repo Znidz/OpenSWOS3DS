@@ -3,6 +3,9 @@
  * SWOS Amiga C/68000 Reversed by Ben Baker (https://github.com/benbaker76)
  * SWOS DOS Reversed by Zlatko Karakaš (https://github.com/zlatkok)
  */
+#ifdef __3DS__
+#include "n3ds.h"
+#endif
 #include "frontend.h"
 #include "game_utils.h"
 #include "audio.h"
@@ -110,6 +113,9 @@ void LoadOverlayToFrontbuffer(const uint8_t *path)
 __attribute__((used, externally_visible, noinline))
 void FrontEndPreLoopSetup(void)
 {
+#ifdef __3DS__
+    N3DS_Loading("THE FOOTBALL WORLD", 5);
+#endif
     /* The football world (include/world.h): the Amiga's drawer names it in data/WORLD;
      * its baked competition records go over 96/97's on both targets, before the JSON. */
 #ifndef SWOS_SDL_BUILD
@@ -123,7 +129,13 @@ void FrontEndPreLoopSetup(void)
     /* SWOS_DATA_JSON: rebuild normal-country competition tables from data_json/
        before any menu reads competitionsTable[]. No-op unless the env var is set. */
     extern void DataJson_InstallCompetitionGraph(void);
+#ifdef __3DS__
+    N3DS_Loading("COMPETITIONS AND TEAMS", 12);
+#endif
     DataJson_InstallCompetitionGraph();
+#ifdef __3DS__
+    N3DS_Loading("COMPETITIONS AND TEAMS", 55);
+#endif
     WorldCups_Install();
     /* career_params.json: override the compiled career-mode balance knobs (starting
        balance, gate receipts, wages, board expectations) so testers can tune them
@@ -138,7 +150,13 @@ void FrontEndPreLoopSetup(void)
     { const char *v = getenv("SWOS_MENU_JSON");
       if (!(v && v[0] == '0' && v[1] == '\0')) {
         extern int MenuJson_InstallAll(void);
+#ifdef __3DS__
+        N3DS_Loading("MENUS", 62);
+#endif
         MenuJson_InstallAll();
+#ifdef __3DS__
+        N3DS_Loading("MENUS", 85);
+#endif
       } }
     /* SWOS 2020's online menus (docs/MENUS.md §10) exist only as JSON and load on
        first use; register their handlers with the loader before anything opens one. */
@@ -151,6 +169,9 @@ void FrontEndPreLoopSetup(void)
     { const char *vt = getenv("SWOS_TACTICS_JSON");
       if (!(vt && vt[0] == '0' && vt[1] == '\0')) {
         extern int TacticsJson_InstallAll(void);
+#ifdef __3DS__
+        N3DS_Loading("FORMATIONS", 90);
+#endif
         TacticsJson_InstallAll();
       } }
 #else
@@ -167,9 +188,15 @@ void FrontEndPreLoopSetup(void)
        Copa isn't installed. Shared code path (career_copa.c) — same on both ports. */
     extern void Career_InstallCopaLibertadoresPresetEntry(void);
     Career_InstallCopaLibertadoresPresetEntry();
+#ifdef __3DS__
+    N3DS_Loading("MUSIC", 95);
+#endif
     InitMenuMusic();
     PrepareMenuBackground();
     InitMainMenuStuff();
+#ifdef __3DS__
+    N3DS_Loading("READY", 100);
+#endif
 
     if (_menuMusic != 0)
     {

@@ -558,6 +558,39 @@ static void set_3d(int32_t on)
     gfxSet3D(on ? true : false);
 }
 
+/* The start-up screens: the title scene on top, a progress bar underneath. The game calls this
+ * between the heavy steps of loading (the competitions, the menus), so the console never looks
+ * stuck. percent is 0..100. */
+#define L_RGB(r, g, b)  ((uint16_t)((((r) >> 3) << 11) | (((g) >> 2) << 5) | ((b) >> 3)))
+void N3DS_Loading(const char *what, int32_t percent)
+{
+    static uint64_t t0;
+    char buf[48];
+    int32_t x0 = 30, x1 = 290, y0 = 128, y1 = 146, fill;
+    uint16_t *top;
+    if (!s_videoUp)
+        return;
+    if (!t0) t0 = osGetTime();
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    set_3d(0);
+    top = (uint16_t *)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
+    if (top)
+        N3DSScr_TitleTop(top, NULL, 0);
+    N3DSScr_Fill(0, 0, 320, 240, L_RGB(14, 18, 30));
+    N3DSScr_Text((320 - N3DSScr_TextWidth("LOADING", 3)) / 2, 70, "LOADING", 3, L_RGB(255, 230, 90));
+    N3DSScr_Text((320 - N3DSScr_TextWidth(what, 1)) / 2, 108, what, 1, L_RGB(235, 235, 235));
+    N3DSScr_Fill(x0 - 2, y0 - 2, x1 + 2, y1 + 2, L_RGB(235, 235, 235));
+    N3DSScr_Fill(x0, y0, x1, y1, L_RGB(14, 18, 30));
+    fill = x0 + (x1 - x0) * percent / 100;
+    N3DSScr_Fill(x0, y0, fill, y1, L_RGB(60, 200, 90));
+    snprintf(buf, sizeof buf, "%d%%  %d s", (int)percent, (int)((osGetTime() - t0) / 1000));
+    N3DSScr_Text((320 - N3DSScr_TextWidth(buf, 1)) / 2, 156, buf, 1, L_RGB(235, 235, 235));
+    N3DSScr_FlushBottom();
+    gfxFlushBuffers();
+    gfxSwapBuffers();
+}
+
 static int32_t main_menu_showing(void);
 
 static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba);

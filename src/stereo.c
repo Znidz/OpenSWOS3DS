@@ -485,4 +485,73 @@ void Stereo_ComposeRow(const uint8_t *fb, int32_t w, int32_t y, int32_t eye,
     }
 }
 
+/* Both eyes of one row at once. The pitch is a shifted copy (memcpy, not a clamped pixel
+ * loop), and the pass over what stands on it -- the part that costs -- reads each pixel once
+ * and writes it to both eyes through a table of shifts. Same result as two ComposeRow calls. */
+static void shifted_copy(uint8_t *out, const uint8_t *bg, int32_t w, int32_t sh)
+{
+    if (sh >= w || -sh >= w) { memset(out, bg[sh > 0 ? w - 1 : 0], (size_t)w); return; }
+    if (sh > 0) {
+        memcpy(out, bg + sh, (size_t)(w - sh));
+        memset(out + w - sh, bg[w - 1], (size_t)sh);
+    } else if (sh < 0) {
+        memset(out, bg[0], (size_t)-sh);
+        memcpy(out - sh, bg, (size_t)(w + sh));
+    } else {
+        memcpy(out, bg, (size_t)w);
+    }
+}
+
+void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t strength,
+                           uint8_t *outL, uint8_t *outR)
+{
+    static int8_t  zL[FRONTBUFFER_MAX_STRIDE_BYTES], zR[FRONTBUFFER_MAX_STRIDE_BYTES];
+    static int8_t  lut[256];
+    static int32_t lutFor = -1;
+    StereoSlot *s = slot_for(fb, 0);
+    const uint8_t *row = fb + y * w, *bg, *st;
+    const int8_t *dp;
+    int32_t pd, e, x;
+
+    if (s_kind == KIND_MENU || !s || w > FRONTBUFFER_MAX_STRIDE_BYTES) {
+        Stereo_ComposeRow(fb, w, y, -1, strength, outL);
+        Stereo_ComposeRow(fb, w, y, +1, strength, outR);
+        return;
+    }
+    if (lutFor != strength) {
+        int32_t d;
+        for (d = -128; d < 128; d++) lut[d + 128] = (int8_t)eye_shift(d, strength);
+        lutFor = strength;
+    }
+    bg = s->bg + y * w;
+    st = s->stamp + y * w;
+    dp = s->dep + y * w;
+
+    pd = ground_depth(y);
+    e = eye_shift(pd, strength);
+    shifted_copy(outL, bg, w, -e);
+    shifted_copy(outR, bg, w, e);
+    if (pd > 127) pd = 127;
+    if (pd < -128) pd = -128;
+    memset(zL, pd, (size_t)w);
+    memset(zR, pd, (size_t)w);
+
+    for (x = 0; x < w; x++) {
+        uint8_t c = row[x];
+        int32_t d, sh, t;
+        if (c == st[x]) {
+            if (dp[x] == STEREO_DEPTH_PITCH)
+                continue;
+            d = dp[x];
+        } else {
+            d = clamp_depth(g_stereoCfg.overlay);
+        }
+        sh = lut[d + 128];
+        t = x + sh;                               /* left eye */
+        if (t >= 0 && t < w && d >= zL[t]) { outL[t] = c; zL[t] = (int8_t)d; }
+        t = x - sh;                               /* right eye */
+        if (t >= 0 && t < w && d >= zR[t]) { outR[t] = c; zR[t] = (int8_t)d; }
+    }
+}
+
 #endif /* SWOS_SDL_BUILD */

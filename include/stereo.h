@@ -88,6 +88,9 @@ int32_t Stereo_FrameKind(void);
  * eye: -1 left, +1 right. strength: 0..256 (the 3D slider). */
 void Stereo_ComposeRow(const uint8_t *fb, int32_t w, int32_t y, int32_t eye,
                        int32_t strength, uint8_t *out);
+/* Both eyes of row y in one pass (the same rows ComposeRow gives, faster). */
+void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t strength,
+                           uint8_t *outL, uint8_t *outR);
 
 #endif /* SWOS_SDL_BUILD */
 #endif /* STEREO_H */

@@ -583,6 +583,17 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
     depth = strength > 0 && kind == STEREO_FRAME_MATCH;
     set_3d(strength > 0);
 
+    /* Original 3DS: a flat pitch (the tilt is the other half of the per-row work) unless
+     * stereo.ini changed the pitch depths, which then win. Players and ball keep their depth. */
+    {
+        static int32_t flatDone;
+        if (s_oldModel && !flatDone) {
+            flatDone = 1;
+            if (g_stereoCfg.pitchFar == -48 && g_stereoCfg.pitchNear == 0)
+                g_stereoCfg.pitchFar = g_stereoCfg.pitchNear = -16;
+        }
+    }
+
     /* Outside a match an original 3DS shows every other frame (a menu does not need 60);
      * in a match every frame is shown. And a log line every 5 s says what it really got. */
     {
@@ -625,26 +636,33 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
         return;
     }
 
-    for (y = 0; y < TOP_H; y++) {
-        const int32_t sy = y * h / TOP_H;
-        const uint8_t *l, *r;
-        /* The framebuffer is the screen turned on its side: column x is 240
-         * pixels, bottom to top. */
-        uint16_t *pl = outL + (TOP_H - 1 - y);
-        if (depth) {
-            Stereo_ComposeRow(fb, w, sy, -1, strength, s_lineL);
-            Stereo_ComposeRow(fb, w, sy, +1, strength, s_lineR);
-            l = s_lineL;
-            r = s_lineR;
-        } else {
-            l = r = fb + sy * w;    /* flat, on the screen */
+    /* The framebuffer is the screen turned on its side: column x is 240 pixels, bottom to
+     * top, so a row at a time touches a new cache line per pixel. Take 8 rows, then write
+     * each column's 8 pixels together (they are neighbours in memory). */
+    for (y = 0; y < TOP_H; y += 8) {
+        static uint8_t tL[8][FRONTBUFFER_MAX_STRIDE_BYTES], tR[8][FRONTBUFFER_MAX_STRIDE_BYTES];
+        const uint8_t *l[8], *r[8];
+        int32_t k;
+        for (k = 0; k < 8; k++) {
+            const int32_t sy = (y + k) * h / TOP_H;
+            if (depth) {
+                Stereo_ComposeRowPair(fb, w, sy, strength, tL[k], tR[k]);
+                l[k] = tL[k];
+                r[k] = tR[k];
+            } else {
+                l[k] = r[k] = fb + sy * w;    /* flat, on the screen */
+            }
         }
-        for (x = 0; x < TOP_W; x++)
-            pl[x * TOP_H] = s_pal565[l[s_xmap[x]]];
-        if (outR) {
-            uint16_t *pr = outR + (TOP_H - 1 - y);
-            for (x = 0; x < TOP_W; x++)
-                pr[x * TOP_H] = s_pal565[r[s_xmap[x]]];
+        for (x = 0; x < TOP_W; x++) {
+            const int32_t sx = s_xmap[x];
+            uint16_t *pl = outL + x * TOP_H + (TOP_H - 8 - y);
+            for (k = 0; k < 8; k++)
+                pl[7 - k] = s_pal565[l[k][sx]];
+            if (outR) {
+                uint16_t *pr = outR + x * TOP_H + (TOP_H - 8 - y);
+                for (k = 0; k < 8; k++)
+                    pr[7 - k] = s_pal565[r[k][sx]];
+            }
         }
     }
     gfxFlushBuffers();

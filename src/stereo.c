@@ -63,6 +63,14 @@ StereoConfig g_stereoCfg = {
     103,    /* hoardY1: their bottom row                          */
     796,    /* hoardY2: the same at the bottom end                */
     807,    /* hoardY3                                            */
+     74,    /* standsStartY: the front wall's base (world row)    */
+      3,    /* wallRows1: the first wall is 3 rows tall           */
+     16,    /* wallRise1: ... and 2 px out                        */
+      4,    /* peopleRows: four rows of people in a tier          */
+      5,    /* rowH: each about 5 rows tall                       */
+      4,    /* rowStep: each row half a pixel further out         */
+      5,    /* wallRows2: the walls between tiers are 5 rows      */
+     24,    /* wallRise2: ... and 3 px out                        */
 };
 
 /* Where sprites were drawn, per row: a few [x0,x1) intervals, merged as they come. Present
@@ -149,6 +157,14 @@ static void set_key(const char *k, int32_t v)
     else if (!strcmp(k, "hoard_y1"))      g_stereoCfg.hoardY1      = (int16_t)v;
     else if (!strcmp(k, "hoard_y2"))      g_stereoCfg.hoardY2      = (int16_t)v;
     else if (!strcmp(k, "hoard_y3"))      g_stereoCfg.hoardY3      = (int16_t)v;
+    else if (!strcmp(k, "stands_start"))  g_stereoCfg.standsStartY = (int16_t)v;
+    else if (!strcmp(k, "wall1_rows"))    g_stereoCfg.wallRows1    = (int16_t)v;
+    else if (!strcmp(k, "wall1_rise"))    g_stereoCfg.wallRise1    = (int16_t)v;
+    else if (!strcmp(k, "people_rows"))   g_stereoCfg.peopleRows   = (int16_t)v;
+    else if (!strcmp(k, "row_h"))         g_stereoCfg.rowH         = (int16_t)v;
+    else if (!strcmp(k, "row_step"))      g_stereoCfg.rowStep      = (int16_t)v;
+    else if (!strcmp(k, "wall2_rows"))    g_stereoCfg.wallRows2    = (int16_t)v;
+    else if (!strcmp(k, "wall2_rise"))    g_stereoCfg.wallRise2    = (int16_t)v;
     else fprintf(stderr, "[stereo] stereo.ini: unknown key '%s'\n", k);
 }
 
@@ -164,15 +180,18 @@ static void write_cfg(FILE *f)
                "; the stands round the pitch (how far out; where they start past the lines) and the goals\n"
                "stands_rise = %d\nstands_margin = %d\ngoal_rise = %d\n"
                "; tiers: rows per tier, depth per tier, the most; the advertising boards: depth, top and bottom world rows\n"
-               "tier_rows = %d\ntier_step = %d\nstands_max = %d\nhoard_rise = %d\nhoard_y0 = %d\nhoard_y1 = %d\nhoard_y2 = %d\nhoard_y3 = %d\n",
+               "tier_rows = %d\ntier_step = %d\nstands_max = %d\nhoard_rise = %d\nhoard_y0 = %d\nhoard_y1 = %d\nhoard_y2 = %d\nhoard_y3 = %d\n"
+               "; the stands as built: front wall row, first wall rows and rise, rows of people per tier, their height and step, the walls between tiers\n"
+               "stands_start = %d\nwall1_rows = %d\nwall1_rise = %d\npeople_rows = %d\nrow_h = %d\nrow_step = %d\nwall2_rows = %d\nwall2_rise = %d\n",
             g_stereoCfg.pitchFar, g_stereoCfg.pitchNear, g_stereoCfg.heightGain,
             g_stereoCfg.hud, g_stereoCfg.overlay, g_stereoCfg.limit,
             g_stereoCfg.menuBack, g_stereoCfg.menuText, g_stereoCfg.menuButton,
             g_stereoCfg.menuSelected, g_stereoCfg.standsRise, g_stereoCfg.standsMargin,
             g_stereoCfg.goalRise, g_stereoCfg.tierRows, g_stereoCfg.tierStep,
             g_stereoCfg.standsMax, g_stereoCfg.hoardRise, g_stereoCfg.hoardY0,
-            g_stereoCfg.hoardY1, g_stereoCfg.hoardY2, g_stereoCfg.hoardY3);
-
+            g_stereoCfg.hoardY1, g_stereoCfg.hoardY2, g_stereoCfg.hoardY3,
+            g_stereoCfg.standsStartY, g_stereoCfg.wallRows1, g_stereoCfg.wallRise1, g_stereoCfg.peopleRows,
+            g_stereoCfg.rowH, g_stereoCfg.rowStep, g_stereoCfg.wallRows2, g_stereoCfg.wallRise2);
 }
 
 static char s_cfgDir[512];
@@ -279,13 +298,58 @@ static int32_t tier_rise(int32_t out)
     return g_stereoCfg.standsRise + up;
 }
 
+/* The stands, built up from the front wall as the real ones are: a low wall, then rows of people
+ * each a step higher than the one in front, then a taller wall, then more rows. s_riseTab[d] is the
+ * rise at d pixel rows behind the front wall; rebuilt whenever a setting changes. */
+#define RISE_TAB 192
+static int16_t s_riseTab[RISE_TAB];
+static StereoConfig s_tabCfg;
+static int32_t s_tabBuilt;
+
+static void build_rise_tab(void)
+{
+    int32_t d = 0, base = 0, t = 0, i, r, k;
+    s_tabCfg = g_stereoCfg;
+    s_tabBuilt = 1;
+    while (d < RISE_TAB) {
+        const int32_t wr = t ? g_stereoCfg.wallRows2 : g_stereoCfg.wallRows1;
+        const int32_t wd = t ? g_stereoCfg.wallRise2 : g_stereoCfg.wallRise1;
+        const int32_t rowH = g_stereoCfg.rowH > 0 ? g_stereoCfg.rowH : 1;
+        for (i = 0; i < wr && d < RISE_TAB; i++, d++)
+            s_riseTab[d] = (int16_t)(base + wd * (i + 1) / (wr ? wr : 1));      /* the wall: a ramp */
+        base += wd;
+        for (r = 0; r < g_stereoCfg.peopleRows; r++) {
+            for (k = 0; k < rowH && d < RISE_TAB; k++, d++)
+                s_riseTab[d] = (int16_t)(base + g_stereoCfg.rowStep * (r + 1));  /* one row of people */
+        }
+        base += g_stereoCfg.rowStep * g_stereoCfg.peopleRows;
+        t++;
+        if (wr + g_stereoCfg.peopleRows * rowH <= 0) break;     /* nothing was added: stop */
+    }
+    for (; d < RISE_TAB; d++)
+        s_riseTab[d] = s_riseTab[d - 1];
+}
+
+static int32_t stands_rise_at(int32_t d)      /* d: pixel rows behind the front wall */
+{
+    if (d <= 0) return 0;
+    if (!s_tabBuilt || memcmp(&s_tabCfg, &g_stereoCfg, sizeof g_stereoCfg) != 0)
+        build_rise_tab();
+    return s_riseTab[d >= RISE_TAB ? RISE_TAB - 1 : d - 1];
+}
+
+/* The world row where the stands at the bottom end start (the same distance past the field). */
+static int32_t stands_start_bottom(void)
+{
+    return STEREO_FIELD_Y1 + (STEREO_FIELD_Y0 - g_stereoCfg.standsStartY);
+}
+
 /* The terrain's rise at world row wy above or below the pitch (0 on and near the pitch). */
 static int32_t terrain_rise_y(int32_t wy)
 {
-    const int32_t m = g_stereoCfg.standsMargin;
     if (g_stereoCfg.standsRise == 0) return 0;
-    if (wy < STEREO_FIELD_Y0 - m) return tier_rise((STEREO_FIELD_Y0 - m) - wy);
-    if (wy > STEREO_FIELD_Y1 + m) return tier_rise(wy - (STEREO_FIELD_Y1 + m));
+    if (wy < g_stereoCfg.standsStartY) return stands_rise_at(g_stereoCfg.standsStartY - wy);
+    if (wy > stands_start_bottom())    return stands_rise_at(wy - stands_start_bottom());
     return 0;
 }
 
@@ -737,7 +801,7 @@ void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t stre
         const int32_t right = (STEREO_FIELD_X1 + m) - (int32_t)Render_CameraX();
         int32_t seg[2][2] = { { 0, 0 }, { 0, 0 } }, k;
         int32_t rowRise = terrain_rise_y(wy);
-        if (wy < STEREO_FIELD_Y0 - m || wy > STEREO_FIELD_Y1 + m) {
+        if (wy < g_stereoCfg.standsStartY || wy > stands_start_bottom()) {
             seg[0][1] = w;
         } else {
             if (left > 0)  { seg[0][1] = left > w ? w : left; }
@@ -853,6 +917,14 @@ static const StereoParam k_params[] = {
     { "HOARD 2 TOP",   &g_stereoCfg.hoardY2,      1 },
     { "HOARD 2 BOT",   &g_stereoCfg.hoardY3,      1 },
     { "GOAL RISE",     &g_stereoCfg.goalRise,     4 },
+    { "STANDS START",  &g_stereoCfg.standsStartY, 1 },
+    { "WALL 1 ROWS",   &g_stereoCfg.wallRows1,    1 },
+    { "WALL 1 RISE",   &g_stereoCfg.wallRise1,    2 },
+    { "PEOPLE ROWS",   &g_stereoCfg.peopleRows,   1 },
+    { "ROW HEIGHT",    &g_stereoCfg.rowH,         1 },
+    { "ROW STEP",      &g_stereoCfg.rowStep,      1 },
+    { "WALL 2 ROWS",   &g_stereoCfg.wallRows2,    1 },
+    { "WALL 2 RISE",   &g_stereoCfg.wallRise2,    2 },
     { "LIMIT",         &g_stereoCfg.limit,        8 },
 };
 

@@ -68,6 +68,14 @@ typedef struct StereoConfig {
     int16_t hoardY1;
     int16_t hoardY2;      /* ... and the far end's boards (top .. bottom)       */
     int16_t hoardY3;
+    int16_t standsStartY; /* the stands' front wall: the world row where they begin (top end)  */
+    int16_t wallRows1;    /* the first wall is this many rows tall ...                       */
+    int16_t wallRise1;    /* ... and stands this much out (1/8 px) across its height          */
+    int16_t peopleRows;   /* rows of people in a tier                                         */
+    int16_t rowH;         /* ... each this many pixel rows tall                               */
+    int16_t rowStep;      /* ... each row this much further out than the one in front         */
+    int16_t wallRows2;    /* the walls between the tiers: rows tall                           */
+    int16_t wallRise2;    /* ... and how far out                                              */
 } StereoConfig;
 
 extern int32_t       g_stereoOn;        /* depth is being recorded */

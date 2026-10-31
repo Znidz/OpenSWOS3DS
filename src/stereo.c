@@ -55,6 +55,8 @@ static int32_t    s_planeBytes;
 /* The sprite being drawn. */
 enum { MODE_NONE, MODE_GROUND, MODE_UPRIGHT, MODE_FLAT };
 static int32_t s_mode;
+enum { CUR_OTHER, CUR_SHADOW, CUR_BALL };
+static int32_t s_cur, s_shadowCentre = 100;  /* what is being drawn; where the ball's shadow is */
 static int32_t s_rowBottom = -1; /* lowest screen row the sprite being drawn covers */
 static int32_t s_groundRow;     /* screen row of the sprite's feet */
 static int32_t s_flatDepth;
@@ -195,6 +197,7 @@ void Stereo_PitchDrawn(const uint8_t *fb)
 void Stereo_BeginSprite(const Sprite *spr, const SpriteGraphics *g)
 {
     (void)g;
+    s_cur = CUR_OTHER;
     if (!g_stereoOn || !spr) {
         s_mode = MODE_NONE;
         return;
@@ -205,16 +208,18 @@ void Stereo_BeginSprite(const Sprite *spr, const SpriteGraphics *g)
         return;
     }
     s_groundRow = (int32_t)spr->y.s.i - (int32_t)Render_CameraY();
+    s_cur = CUR_OTHER;
     if (spr == &_ballShadowSprite) {
+        s_cur = CUR_SHADOW;
         s_mode = MODE_FLAT;
         s_flatDepth = clamp_depth(ground_depth(s_groundRow));
     } else if (spr == &_ballSprite) {
-        /* On its shadow the ball is on the ground, the plane furthest from the viewer: exactly
-         * the pitch's depth there. Only a ball clearly in the air comes forward. */
-        int32_t z = spr->z.s.i - 3;
-        if (z < 0) z = 0;
+        /* On its shadow the ball is on the ground, the plane furthest from the viewer.
+         * How far it has risen is the gap on screen between it and its shadow, filled in
+         * by Stereo_SetRows once both are placed. */
+        s_cur = CUR_BALL;
         s_mode = MODE_FLAT;
-        s_flatDepth = clamp_depth(ground_depth(s_groundRow) + g_stereoCfg.heightGain * z / 32);
+        s_flatDepth = clamp_depth(ground_depth(s_shadowCentre));
     } else {
         s_mode = MODE_UPRIGHT;     /* players, keepers, referee, goals, flags */
     }
@@ -222,8 +227,15 @@ void Stereo_BeginSprite(const Sprite *spr, const SpriteGraphics *g)
 
 void Stereo_SetRows(int32_t top, int32_t bottom)
 {
-    (void)top;
     s_rowBottom = bottom;
+    if (s_cur == CUR_SHADOW) {
+        s_shadowCentre = (top + bottom) / 2;
+        s_flatDepth = clamp_depth(ground_depth(s_shadowCentre));
+    } else if (s_cur == CUR_BALL) {
+        int32_t lift = s_shadowCentre - (top + bottom) / 2;   /* rows above its shadow */
+        if (lift < 0) lift = 0;
+        s_flatDepth = clamp_depth(ground_depth(s_shadowCentre) + g_stereoCfg.heightGain * lift / 8);
+    }
 }
 
 void Stereo_BeginGround(int32_t on)

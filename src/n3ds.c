@@ -569,9 +569,6 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
 
     /* An original 3DS cannot compose two eyes at the game's rate; showing every other frame
      * keeps the game itself at full speed (the match is still simulated every frame). */
-    if (s_oldModel && (s_presentTick++ & 1))
-        return;
-
     for (x = 0; x < 256; x++) {
         const uint8_t *c = rgba + x * 4;
         s_pal565[x] = (uint16_t)(((c[0] >> 3) << 11) | ((c[1] >> 2) << 5) | (c[2] >> 3));
@@ -587,6 +584,23 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
     kind = Stereo_FrameKind();
     depth = strength > 0 && kind == STEREO_FRAME_MATCH;
     set_3d(strength > 0);
+
+    /* Outside a match an original 3DS shows every other frame (a menu does not need 60);
+     * in a match every frame is shown. And a log line every 5 s says what it really got. */
+    {
+        static uint64_t t0; static int32_t shown;
+        uint64_t now = osGetTime();
+        if (s_oldModel && kind != STEREO_FRAME_MATCH && (s_presentTick++ & 1))
+            return;
+        if (!t0) t0 = now;
+        shown++;
+        if (now - t0 >= 5000) {
+            fprintf(stderr, "[fps] %d.%d shown/s (%s, %s)\n", (int)(shown * 1000 / (now - t0)),
+                    (int)(shown * 10000 / (now - t0) % 10), kind == STEREO_FRAME_MATCH ? "match" : "menu",
+                    s_oldModel ? "old 3DS" : "new 3DS");
+            t0 = now; shown = 0;
+        }
+    }
 
     outL = (uint16_t *)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
     outR = s_3dOn ? (uint16_t *)gfxGetFramebuffer(GFX_TOP, GFX_RIGHT, NULL, NULL) : NULL;

@@ -640,7 +640,7 @@ void N3DSScr_BottomMatch(const uint16_t *pal)
     const uint8_t *gt = (const uint8_t *)&_gameTime;
 
     s_bottomMode = N3DS_BOTTOM_MATCH;
-    if ((s_bottomFrame++ & 1) || !fb)
+    if ((s_bottomFrame++ & 3) || !fb)    /* ~15 Hz: a radar does not need 60 */
         return;
 
     /* the score panel */

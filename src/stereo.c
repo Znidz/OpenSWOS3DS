@@ -25,6 +25,11 @@
 
 #define STEREO_SLOTS        3
 #define STEREO_NO_TRACK     0x7FFF
+/* the playing field in pitch pixels (the radar uses the same box) */
+#define STEREO_FIELD_X0  81
+#define STEREO_FIELD_X1  590
+#define STEREO_FIELD_Y0  129
+#define STEREO_FIELD_Y1  769
 #define STEREO_HUD_Z_MIN    8000          /* sprites.c HUD_LAYER_Z_MIN */
 
 int32_t      g_stereoOn;
@@ -39,6 +44,9 @@ StereoConfig g_stereoCfg = {
      16,    /* menuText: titles, text and pictures, 2 px out      */
      32,    /* menuButton: the rectangles, 4 px out               */
      48,    /* menuSelected: the highlighted one, 6 px out        */
+     48,    /* standsRise: the stands 6 px out                    */
+     40,    /* standsMargin: pitch pixels past the touchlines     */
+     24,    /* goalRise: a goal's base 3 px out, its bar further  */
 };
 
 typedef struct {
@@ -56,6 +64,7 @@ static int32_t    s_planeBytes;
 enum { MODE_NONE, MODE_GROUND, MODE_UPRIGHT, MODE_FLAT };
 static int32_t s_mode;
 enum { CUR_OTHER, CUR_SHADOW, CUR_BALL };
+static int32_t s_isGoal;
 static int32_t s_cur, s_shadowCentre = 100;  /* what is being drawn; where the ball's shadow is */
 static int32_t s_rowBottom = -1; /* lowest screen row the sprite being drawn covers */
 static int32_t s_groundRow;     /* screen row of the sprite's feet */
@@ -78,6 +87,9 @@ static void set_key(const char *k, int32_t v)
     else if (!strcmp(k, "menu_text"))     g_stereoCfg.menuText     = (int16_t)v;
     else if (!strcmp(k, "menu_button"))   g_stereoCfg.menuButton   = (int16_t)v;
     else if (!strcmp(k, "menu_selected")) g_stereoCfg.menuSelected = (int16_t)v;
+    else if (!strcmp(k, "stands_rise"))   g_stereoCfg.standsRise   = (int16_t)v;
+    else if (!strcmp(k, "stands_margin")) g_stereoCfg.standsMargin = (int16_t)v;
+    else if (!strcmp(k, "goal_rise"))     g_stereoCfg.goalRise     = (int16_t)v;
     else fprintf(stderr, "[stereo] stereo.ini: unknown key '%s'\n", k);
 }
 
@@ -97,11 +109,14 @@ void Stereo_LoadConfig(const char *dir)
                        "; depth per pixel of height above the pitch, in 1/64 pixel\n"
                        "height_gain = %d\nhud = %d\noverlay = %d\nlimit = %d\n"
                        "; menus: the backdrop, text and pictures, buttons, the highlighted button\n"
-                       "menu_back = %d\nmenu_text = %d\nmenu_button = %d\nmenu_selected = %d\n",
+                       "menu_back = %d\nmenu_text = %d\nmenu_button = %d\nmenu_selected = %d\n"
+                       "; the stands round the pitch (how far out; where they start past the lines) and the goals\n"
+                       "stands_rise = %d\nstands_margin = %d\ngoal_rise = %d\n",
                     g_stereoCfg.pitchFar, g_stereoCfg.pitchNear, g_stereoCfg.heightGain,
                     g_stereoCfg.hud, g_stereoCfg.overlay, g_stereoCfg.limit,
                     g_stereoCfg.menuBack, g_stereoCfg.menuText, g_stereoCfg.menuButton,
-                    g_stereoCfg.menuSelected);
+                    g_stereoCfg.menuSelected, g_stereoCfg.standsRise, g_stereoCfg.standsMargin,
+                    g_stereoCfg.goalRise);
             fclose(f);
         }
         return;
@@ -209,6 +224,13 @@ void Stereo_BeginSprite(const Sprite *spr, const SpriteGraphics *g)
     }
     s_groundRow = (int32_t)spr->y.s.i - (int32_t)Render_CameraY();
     s_cur = CUR_OTHER;
+    s_isGoal = 0;
+    if (spr != &_ballShadowSprite && spr != &_ballSprite && spr->teamNumber == 0) {
+        int32_t gx = spr->x.s.i - 336, gy = spr->y.s.i;
+        if (gx < 0) gx = -gx;
+        /* the goals: no team, on the centre line, at either goal line (pitch 129..769) */
+        s_isGoal = gx <= 70 && ((gy >= 129 - 40 && gy <= 129 + 40) || (gy >= 769 - 40 && gy <= 769 + 40));
+    }
     if (spr == &_ballShadowSprite) {
         s_cur = CUR_SHADOW;
         s_mode = MODE_FLAT;
@@ -282,7 +304,12 @@ void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
         /* A standing figure is one flat card at its feet: a depth that grew row by row
          * sheared players, and measured from the sprite's anchor it flattened the legs. */
         int32_t feet = s_rowBottom >= 0 ? s_rowBottom : s_groundRow;
-        d = clamp_depth(ground_depth(feet) + g_stereoCfg.heightGain / 4);
+        int32_t h = feet - y;                      /* rows above the feet */
+        if (h < 0) h = 0;
+        if (s_isGoal)       /* a goal: its base out, the bar further, the net in between */
+            d = clamp_depth(ground_depth(feet) + g_stereoCfg.goalRise + h * 3);
+        else                /* a player leans out: feet near the ground, the head ~2 px out */
+            d = clamp_depth(ground_depth(feet) + g_stereoCfg.heightGain / 2 + h * g_stereoCfg.heightGain / 16);
     }
     for (px = 0; px < sprW; px++) {
         int32_t x = dstX + px;
@@ -535,6 +562,34 @@ void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t stre
     if (pd < -128) pd = -128;
     memset(zL, pd, (size_t)w);
     memset(zR, pd, (size_t)w);
+
+    /* The stands: the world outside the touchlines (plus a margin) stands out from the pitch.
+     * Whole rows above and below the field, and the strips to its left and right. */
+    if (g_stereoCfg.standsRise != 0) {
+        const int32_t m = g_stereoCfg.standsMargin;
+        const int32_t wy = y + (int32_t)Render_CameraY();
+        const int32_t left = (STEREO_FIELD_X0 - m) - (int32_t)Render_CameraX();
+        const int32_t right = (STEREO_FIELD_X1 + m) - (int32_t)Render_CameraX();
+        int32_t sd = clamp_depth(ground_depth(y) + g_stereoCfg.standsRise), se = eye_shift(sd, strength);
+        int32_t seg[2][2] = { { 0, 0 }, { 0, 0 } }, k;
+        if (wy < STEREO_FIELD_Y0 - m || wy > STEREO_FIELD_Y1 + m) {
+            seg[0][1] = w;
+        } else {
+            if (left > 0)  { seg[0][1] = left > w ? w : left; }
+            if (right < w) { seg[1][0] = right < 0 ? 0 : right; seg[1][1] = w; }
+        }
+        for (k = 0; k < 2; k++) {
+            int32_t a = seg[k][0], b = seg[k][1];
+            for (x = a; x < b; x++) {
+                int32_t sl = x - se, sr = x + se;
+                if (sl < 0) sl = 0; else if (sl >= w) sl = w - 1;
+                if (sr < 0) sr = 0; else if (sr >= w) sr = w - 1;
+                outL[x] = bg[sl];
+                outR[x] = bg[sr];
+                zL[x] = zR[x] = (int8_t)sd;
+            }
+        }
+    }
 
     for (x = 0; x < w; x++) {
         uint8_t c = row[x];

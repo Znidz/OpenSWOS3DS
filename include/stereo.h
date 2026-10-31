@@ -50,6 +50,9 @@ typedef struct StereoConfig {
     int16_t menuText;     /*        text and pictures drawn on it              */
     int16_t menuButton;   /*        the coloured rectangles                    */
     int16_t menuSelected; /*        the highlighted rectangle                  */
+    int16_t standsRise;   /* the stands round the pitch stand this far out      */
+    int16_t standsMargin; /* ... starting this many pitch pixels past the lines */
+    int16_t goalRise;     /* goals: how far their base stands out; they lean on */
 } StereoConfig;
 
 extern int32_t       g_stereoOn;        /* depth is being recorded */

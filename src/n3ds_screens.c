@@ -348,9 +348,27 @@ void N3DSScr_TitleTop(uint16_t *left, uint16_t *right, int32_t strength)
 static int32_t s_bottomMode = -1;
 static int32_t s_bottomFrame;
 
+/* Everything for the touch screen is drawn in memory and copied to the screen in one go, so
+ * the display never shows a half-drawn frame (the radar used to tear). The copy is only made
+ * when something was drawn. */
+static uint16_t s_shadow[BOT_W * SCR_H];
+static int32_t  s_botDirty;
+
 static uint16_t *bottom_fb(void)
 {
-    return (uint16_t *)gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+    s_botDirty = 1;
+    return s_shadow;
+}
+
+void N3DSScr_FlushBottom(void)
+{
+    uint16_t *real;
+    if (!s_botDirty)
+        return;
+    real = (uint16_t *)gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+    if (real)
+        memcpy(real, s_shadow, sizeof s_shadow);
+    s_botDirty = 0;
 }
 
 int32_t N3DSScr_BottomMode(void)
@@ -421,7 +439,7 @@ void N3DSScr_BottomMenu(const uint8_t *fb, int32_t w, const uint16_t *pal, int32
     static uint16_t prevPal[256];
     static int32_t  mapFor = -1;
     uint16_t line[BOT_W];
-    uint16_t *out = bottom_fb();
+    uint16_t *out = s_shadow;           /* marked dirty only when it is redrawn */
     int32_t x, y, margin = (w - 336) / 2, changed = s_menuDirty;
     int32_t dstLo = 0, dstHi = SCR_H;
     if (margin < 0) margin = 0;
@@ -470,6 +488,7 @@ void N3DSScr_BottomMenu(const uint8_t *fb, int32_t w, const uint16_t *pal, int32
     if (!changed)
         return;
     s_menuDirty = 0;
+    s_botDirty = 1;
     if (s_winExact) {
         for (x = 0; x < BOT_W; x++) {
             uint16_t *col = out + x * SCR_H;

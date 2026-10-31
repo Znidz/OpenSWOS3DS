@@ -628,6 +628,8 @@ void N3DS_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba)
     else
         N3DSScr_BottomInfo();
 
+    N3DSScr_FlushBottom();
+
     /* In menus the top screen shows the 3D title scene; the menu is on the bottom. */
     if (kind == STEREO_FRAME_MENU) {
         N3DSScr_TitleTop(outL, outR, strength);

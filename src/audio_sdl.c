@@ -186,6 +186,8 @@ int AudioSDL_Init(int mono)
         return -1;
     }
     s_master_volume = 0;
+    fprintf(stderr, "[audio] device %d Hz, %d ch, %d samples/buffer, queue target %d ms\n",
+            (int)s_audio_spec.freq, (int)s_audio_spec.channels, (int)s_audio_spec.samples, QUEUE_TARGET_MS);
     SDL_PauseAudioDevice(s_audio_dev, 0);
 
     /* Start the dedicated pump so the queue stays full regardless of render load.
@@ -265,6 +267,15 @@ void AudioSDL_Shutdown(void)
  * If both threads arrive simultaneously, the loser sees the queue
  * already topped up and bails out — guaranteeing the song state
  * advances at most once per "queue underflow event", not twice. */
+/* How often the device ran out of sound, and how often the queue was low, since the last
+ * call (logged next to the frame rate: a rhythm in the sound shows here). */
+static volatile uint32_t s_underruns, s_lowqueue;
+void AudioSDL_TakeStats(uint32_t *underruns, uint32_t *low)
+{
+    *underruns = s_underruns; s_underruns = 0;
+    *low = s_lowqueue; s_lowqueue = 0;
+}
+
 void AudioSDL_Tick(void)
 {
     if (!s_audio_dev) return;
@@ -288,6 +299,8 @@ void AudioSDL_Tick(void)
         SDL_UnlockMutex(s_mtx);
         return;
     }
+    if (queued_bytes == 0) s_underruns++;
+    else if (queued_bytes < target_bytes / 4) s_lowqueue++;
 
     if (s_fade_left > 0) {
         s_fade_left--;

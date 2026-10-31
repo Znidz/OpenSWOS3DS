@@ -192,6 +192,14 @@ jobs:
           fi
           cat cia.log
 
+      - name: Symbols for crash dumps
+        continue-on-error: true
+        run: |
+          export PATH="$DEVKITARM/bin:$PATH"
+          # a crash screen gives PC; the program is loaded at 0x100000, so PC - 0x100000 is
+          # the address in this list (sorted): the function it falls in is the one that crashed
+          arm-none-eabi-nm -n -C build/3ds/OpenSWOS3D.elf | grep -i ' [tTwW] ' > OpenSWOS3D.symbols.txt
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -216,7 +224,7 @@ jobs:
           REL=$(curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" "$API/releases" \
             -d "{\"tag_name\":\"$TAG\",\"target_commitish\":\"$GITHUB_SHA\",\"name\":\"OpenSWOS 3D build $GITHUB_RUN_NUMBER\",\"body\":\"$BODY\"}")
           UPLOAD=$(echo "$REL" | jq -r .upload_url | sed 's/{.*//')
-          for f in OpenSWOS3D.cia OpenSWOS3D.3dsx QR.png; do
+          for f in OpenSWOS3D.cia OpenSWOS3D.3dsx OpenSWOS3D.symbols.txt QR.png; do
             [ -f "$f" ] || { echo "::warning::$f was not built"; continue; }
             curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" \
               -H "Content-Type: application/octet-stream" \

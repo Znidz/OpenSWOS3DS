@@ -209,7 +209,10 @@ void Stereo_BeginSprite(const Sprite *spr, const SpriteGraphics *g)
         s_mode = MODE_FLAT;
         s_flatDepth = clamp_depth(ground_depth(s_groundRow));
     } else if (spr == &_ballSprite) {
-        int32_t z = spr->z.s.i > 0 ? spr->z.s.i : 0;
+        /* On its shadow the ball is on the ground, the plane furthest from the viewer: exactly
+         * the pitch's depth there. Only a ball clearly in the air comes forward. */
+        int32_t z = spr->z.s.i - 3;
+        if (z < 0) z = 0;
         s_mode = MODE_FLAT;
         s_flatDepth = clamp_depth(ground_depth(s_groundRow) + g_stereoCfg.heightGain * z / 32);
     } else {

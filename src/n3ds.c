@@ -36,6 +36,21 @@
 #include "adf.h"
 #include "sd_manifest.h"
 #include "miniz_swos.h"
+#include <errno.h>
+
+/* The data setup makes a folder path one prefix at a time ("sdmc:", "sdmc:/3ds", ...), and
+ * libctru's mkdir refuses the bare device name -- "cannot create the folder .../assets/data".
+ * Linked with -Wl,--wrap=mkdir: a device name alone already exists. */
+int __real_mkdir(const char *path, mode_t mode);
+int __wrap_mkdir(const char *path, mode_t mode)
+{
+    size_t n = path ? strlen(path) : 0;
+    if (n && path[n - 1] == ':' && strchr(path, '/') == NULL) {
+        errno = EEXIST;
+        return -1;
+    }
+    return __real_mkdir(path, mode);
+}
 
 /* The game uses the stack like a desktop program does. */
 u32 __stacksize__ = 1024 * 1024;

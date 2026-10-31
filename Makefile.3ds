@@ -110,7 +110,7 @@ OBJECTS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(SOURCES)) \
            $(patsubst %.c,$(OBJDIR)/sd/%.o,$(notdir $(SD_SRCS)))
 DEPS    := $(OBJECTS:.o=.d)
 
-LDFLAGS := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(OBJDIR)/$(TARGET).map -Wl,--gc-sections \
+LDFLAGS := -specs=3dsx.specs -g $(ARCH) -Wl,--wrap=mkdir -Wl,-Map,$(OBJDIR)/$(TARGET).map -Wl,--gc-sections \
            -L$(PORTLIBS)/lib -L$(CTRULIB)/lib
 LDLIBS  := $(SDL_LIBS) -lctru -lm
 

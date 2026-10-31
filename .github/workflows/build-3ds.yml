@@ -24,6 +24,8 @@ jobs:
           apt-get update > /dev/null && apt-get install -y --no-install-recommends git ca-certificates > /dev/null
 
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # the release notes list the commits since the last build
 
       - name: Fetch the data converter
         run: |
@@ -205,7 +207,12 @@ jobs:
               QR="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/QR.png"
             fi
           fi
-          BODY="Built from ${GITHUB_SHA}.\n\nTo install from your phone: on the 3DS open FBI, Remote Install, Scan QR Code, and scan this:\n\n![QR code](${QR})\n\nNo luck with the QR code? Open [OpenSWOS3D.cia](${CIA_URL}) on your phone and save it, then put it on the SD card and install it with FBI (SD, then the file, then Install CIA). Or in FBI choose Remote Install, Receive URLs over the network, and send this link from a PC with a tool like sockfile.\n\nThen copy your SWOS 96/97 Amiga disk images (.adf) to sdmc:/3ds/OpenSWOS3D/ and start OpenSWOS 3D. The first start turns them into the game's data. Other seasons (e.g. sensiblesoccer.de's 24/25 .hdf) go in folders under sdmc:/3ds/OpenSWOS3D/seasons/ and are chosen with the SEASON button on the main menu. A season folder can also hold only the season's team files (TEAM.000 ..., loose, zipped, or on an .adf data disk); they are played over your 96/97 disks.\n\n**Credits:** Sensible World of Soccer by Sensible Software, (c) Sensible Software and its current rights holders. OpenSWOS by Ben Baker (benbaker76) and the OpenSWOS contributors; DOS reverse engineering by Zlatko Karakas. OpenSWOS 3D is an unofficial fan port and contains no game data."
+          # What changed: the commit subjects since the previous release (written to be read).
+          PREV=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$API/releases/latest" 2>/dev/null | jq -r '.target_commitish // empty')
+          if [ -n "$PREV" ] && git cat-file -e "$PREV^{commit}" 2>/dev/null; then RANGE="$PREV..$GITHUB_SHA"; else RANGE="-n 8 $GITHUB_SHA"; fi
+          CHANGES=$(git log --no-merges --pretty='- %s' $RANGE | grep -vi '^- \(tidy\|merge\|update readme\)' | head -20 | tr -d '"\\' | sed 's/^- 3DS stereo: /- 3D: /; s/^- 3DS: /- /; s/^- CI: /- Build: /')
+          [ -n "$CHANGES" ] || CHANGES="- Rebuilt with no code changes."
+          BODY="Built from ${GITHUB_SHA}.\n\n**What changed in this build:**\n\n${CHANGES//$'\n'/\\n}\n\nTo install from your phone: on the 3DS open FBI, Remote Install, Scan QR Code, and scan this:\n\n![QR code](${QR})\n\nNo luck with the QR code? Open [OpenSWOS3D.cia](${CIA_URL}) on your phone and save it, then put it on the SD card and install it with FBI (SD, then the file, then Install CIA). Or in FBI choose Remote Install, Receive URLs over the network, and send this link from a PC with a tool like sockfile.\n\nThen copy your SWOS 96/97 Amiga disk images (.adf) to sdmc:/3ds/OpenSWOS3D/ and start OpenSWOS 3D. The first start turns them into the game's data. Other seasons (e.g. sensiblesoccer.de's 24/25 .hdf) go in folders under sdmc:/3ds/OpenSWOS3D/seasons/ and are chosen with the SEASON button on the main menu. A season folder can also hold only the season's team files (TEAM.000 ..., loose, zipped, or on an .adf data disk); they are played over your 96/97 disks.\n\n**Credits:** Sensible World of Soccer by Sensible Software, (c) Sensible Software and its current rights holders. OpenSWOS by Ben Baker (benbaker76) and the OpenSWOS contributors; DOS reverse engineering by Zlatko Karakas. OpenSWOS 3D is an unofficial fan port and contains no game data."
           REL=$(curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" "$API/releases" \
             -d "{\"tag_name\":\"$TAG\",\"target_commitish\":\"$GITHUB_SHA\",\"name\":\"OpenSWOS 3D build $GITHUB_RUN_NUMBER\",\"body\":\"$BODY\"}")
           UPLOAD=$(echo "$REL" | jq -r .upload_url | sed 's/{.*//')

@@ -218,6 +218,11 @@ void AudioSDL_PauseAndClear(void)
 
 void AudioSDL_Shutdown(void)
 {
+    /* Only one caller ever tears the audio down: a second thread freeing the same
+     * mutex/device (the quit watchdog racing the normal shutdown) crashed in free(). */
+    static volatile int s_shut;
+    if (__sync_lock_test_and_set(&s_shut, 1))
+        return;
     /* Stop the pump before tearing down the device so it can't queue onto a
      * closed device. */
     if (s_pump_thread) {

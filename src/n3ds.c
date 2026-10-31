@@ -118,7 +118,9 @@ static void quit_watchdog(void *arg)
     AudioSDL_Shutdown();
     fflush(stderr);
     N3DS_Exit();                        /* the screens back to the system */
-    exit(0);
+    /* Not exit(): its teardown frees and closes things the (still running) game threads
+     * use -- a crash in free() on the quit screen. The services are returned; end here. */
+    svcExitProcess();
 }
 
 void N3DS_QuitWatchdog(void)

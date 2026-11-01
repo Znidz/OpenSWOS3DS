@@ -9,7 +9,7 @@ fork adds a Nintendo 3DS version of it. It is not made or endorsed by the OpenSW
 by Sensible Software or its rights holders. For the PC, Mac, Linux and Amiga versions, go to
 [OpenSWOS itself](https://github.com/benbaker76/OpenSWOS).
 
-<p align="center"><b><a href="https://github.com/Znidz/OpenSWOS/releases">Download OpenSWOS 3D (.cia)</a></b></p>
+<p align="center"><b><a href="https://github.com/Znidz/OpenSWOS3DS/releases">Download OpenSWOS 3D (.cia)</a></b></p>
 
 <p align="center">
 <img src="docs/images/3ds/title.png" alt="The top screen in the menus" width="400">
@@ -48,7 +48,7 @@ by Sensible Software or its rights holders. For the PC, Mac, Linux and Amiga ver
 
 ## Installing
 
-1. **Get the app.** Open the [releases page](https://github.com/Znidz/OpenSWOS/releases) and
+1. **Get the app.** Open the [releases page](https://github.com/Znidz/OpenSWOS3DS/releases) and
    use the newest **OpenSWOS 3D build**. On the 3DS, open FBI, choose **Remote Install → Scan
    QR Code**, and scan the QR code on the release page. Or download `OpenSWOS3D.cia`, copy it
    to the SD card and install it with FBI.
@@ -105,14 +105,14 @@ on a PC, or delete it to go back to the defaults. The 3D slider then scales ever
 
 ## Found a bug in the 3DS version?
 
-Please report it on **[this fork's issues](https://github.com/Znidz/OpenSWOS/issues)**, not
+Please report it on **[this fork's issues](https://github.com/Znidz/OpenSWOS3DS/issues)**, not
 to OpenSWOS, whose team does not support this version. Say which build you have, what you did
 and what happened, and attach `sdmc:/3ds/OpenSWOS3D/SWOS.log`. A photo of the screens helps.
 
 ## How it is made
 
 The 3DS version is OpenSWOS's own SDL build with a 3DS layer added. All the work is on the
-[`stereo3d` branch](https://github.com/Znidz/OpenSWOS/tree/stereo3d), and GitHub builds the
+[`stereo3d` branch](https://github.com/Znidz/OpenSWOS3DS/tree/stereo3d), and GitHub builds the
 `.cia` on every change ([`.github/workflows/build-3ds.yml`](.github/workflows/build-3ds.yml),
 [`Makefile.3ds`](Makefile.3ds)). How the 3D, the two screens and the seasons work is described
 in [docs/3DS.md](docs/3DS.md).

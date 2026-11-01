@@ -379,14 +379,20 @@ composition's on-device gain.
 **Known stale text**
 - `docs/3DS.md` said 454 × 272 (fixed); it still
   says the depths in `stereo.ini` are only the menu ones.
-- `README.md` and `docs/3DS.md` link `github.com/Znidz/OpenSWOS` (the old name); the repo is now
+- (fixed 2026-11-01) `README.md` linked `github.com/Znidz/OpenSWOS` (the old name); the repo is
   `Znidz/OpenSWOS3DS`.
-- `.claude/CLAUDE.md`'s target table does not list the 3DS.
+- (fixed 2026-11-01) `.claude/CLAUDE.md`'s target table now lists the 3DS.
 - `docs/3DS.md` had no pointer to this file before 2026-11-01.
 
 ---
 
 ## 8. Staying in step with upstream
+
+- **Taken from upstream so far (cherry-picked with `-x`, 2026-11-01):** `b1552ca` the original's 16 menu colours,
+  `28e362a` control rows say what they use, `5e68ad6` walked-off players past the original's screen are not
+  drawn. **Left:** `461ac1b` (SWOS_WORLDS=0 and layout-dependent reads: a large world-engine change that needs the
+  other `worlds:`/`leagues:` commits), the online/lobby/account work (no netplay here) and the world data.
+  Upstream is `benbaker76/OpenSWOS`; `git remote add upstream` it to see what is new.
 
 - Upstream's `src/sprites.c`, `pitch.c`, `animated_patterns.c`, `platform_sdl.c`, `main.c`, `menu_system.c`,
   `frontend.c`, `audio_sdl.c`, `fade.c`, `game_loop.c`, `replay_v2.c` are where merges will conflict; each

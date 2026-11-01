@@ -9,6 +9,7 @@ original `SWOS2.s`. **One** source tree builds **both** targets:
 |---|---|---|---|
 | SDL (Linux/Windows/macOS/WASM/ARM) | `make` | `bin/SWOS*` | the day-to-day dev target |
 | Amiga m68k (A1200/AGA) | `make -f Makefile.amiga` | `bin/SWOS2` | runs under FS-UAE/WinUAE or real hardware |
+| Nintendo 3DS (stereoscopic, ARM11) | `make -f Makefile.3ds` (CI: `.github/workflows/build-3ds.yml`) | `.cia` | a flavour of the SDL build with its own depth model (`src/stereo.c`); the fork `Znidz/OpenSWOS3DS`, branch `stereo3d`. How it differs from upstream, and why: `docs/3DS_DIVERGENCES.md` |
 | Nintendo Switch (NX-NXFP2-a64) | `scripts/build_switch.sh` | `bin/SWOS.nss` | a flavour of the SDL build; needs the NDA SDK + SDL fork, neither in this tree. **Not yet linked or run** — see `docs/SWITCH.md` |
 
 `src/` and `include/` are **shared**. Platform divergence is expressed with

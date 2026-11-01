@@ -59,7 +59,7 @@ StereoConfig g_stereoCfg = {
       8,    /* tierStep: each tier 1 px further out than the last */
      40,    /* standsMax: the top tier 5 px beyond the first      */
      26,    /* hoardRise: a board's base 10 (26 above the pitch)  */
-     92,    /* hoardY0: the boards' top row (world), top end       */
+     89,    /* hoardY0: the boards' top row (world), top end       */
     103,    /* hoardY1: their bottom row                          */
     800,    /* hoardY2: the same at the bottom end                */
     812,    /* hoardY3                                            */

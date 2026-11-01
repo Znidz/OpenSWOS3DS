@@ -220,7 +220,7 @@ Each item is *problem → what we found → decision → alternatives*.
   (`hoard_rise` = base, `hoard_slope` per row in tenths of 1/8 px). Defaults are the owner's marks:
   ≈ +10 at the base and ≈ +34 at the top row of the top board, i.e. base 26 over the ground and 2.4 per
   row. *Earlier* the board was one depth plus a steep per-row term, which split it between two levels.
-- **Board rows are measured, not guessed.** Top end world rows **92–103**; the bottom end was first
+- **Board rows are measured, not guessed.** Top end world rows **89–103** (was 92: a 2026-11-01 screenshot showed the top 3 rows of the board at the stands' depth); the bottom end was first
   796–807 and the first estimate **missed the real board** — the owner's marks at rows 808–812 were
   classed as pitch. Now **800–812**. *Alternative:* find the board by its colour at run time — rejected as
   slower and fragile across pitch types. If a pitch type has the boards elsewhere, these four settings are
@@ -343,7 +343,7 @@ toward the viewer.
 | `tier_rows`, `tier_step`, `stands_max` | 14, 8, 40 | side stands' tiers |
 | `goal_rise` | 24 | a goal's base |
 | `hoard_rise`, `hoard_slope` | 26, 24 | a board's base lift; gain per row up its face (tenths) |
-| `hoard_y0..y3` | 92, 103, 800, 812 | the boards' world rows (top end, bottom end) |
+| `hoard_y0..y3` | 89, 103, 800, 812 | the boards' world rows (top end, bottom end) |
 | `stands_start` | 74 | the front wall's world row (top end; the bottom is mirrored) |
 | `wall1_rows/rise`, `people_rows`, `row_h`, `row_step`, `wall2_rows/rise` | 3/16, 4, 5, 4, 5/24 | the stands' staircase |
 | `shadow_idx` | 8 | palette index drawn flat on the pitch (0 = off) |

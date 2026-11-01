@@ -640,6 +640,42 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
 /* Times the present step so the log can say how much of a frame it takes. */
 static uint64_t s_presentTicks, s_presentCalls, s_tBottom, s_tTop, s_tmark, s_tCompose;
 static volatile int32_t s_dbgRequest, s_dbgRunning;   /* the 3D checker (n3ds_debug.c) */
+
+/* ---- where a match frame's time goes (RASTER markers in game_loop.c, FPROF_* around the rest) ---- */
+static uint32_t s_fp[8];                 /* ticks per phase: undraw, scroll, sim, crowd, sprites, hud, wait+present */
+static uint64_t s_fpLast;
+static int32_t  s_fpCur = -1;
+static uint32_t s_fpFrames;
+static volatile uint32_t s_fpExtra[4];   /* recorder, 3D plane copy, audio pump */
+
+void FrameProf_Phase(unsigned rgb12)
+{
+    const uint64_t now = svcGetSystemTick();
+    int32_t i;
+    switch (rgb12) {
+    case 0x0F00: i = 0; break;
+    case 0x0FF0: i = 1; break;
+    case 0x00F0: i = 2; s_fpFrames++; break;
+    case 0x0F0F: i = 3; break;
+    case 0x000F: i = 4; break;
+    case 0x00FF: i = 5; break;
+    default:     i = 6; break;
+    }
+    if (s_fpCur >= 0 && now - s_fpLast < 134000000ull)     /* a gap over half a second is not a frame (a menu between matches) */
+        s_fp[s_fpCur] += (uint32_t)(now - s_fpLast);
+    s_fpCur = i;
+    s_fpLast = now;
+}
+
+uint32_t FrameProf_Now(void)
+{
+    return (uint32_t)svcGetSystemTick();
+}
+
+void FrameProf_Add(int slot, uint32_t t0)
+{
+    __sync_fetch_and_add(&s_fpExtra[slot & 3], (uint32_t)svcGetSystemTick() - t0);
+}
 static void debug_modal(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba);
 extern volatile uint16_t _currentGameTick;   /* the 50 Hz game clock (platform_sdl.c) */
 /* The match waits here while the checker is open: this frame, composed again every pass so a
@@ -745,7 +781,22 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
                       (unsigned)(s_tTop * 10 / 268111 / calls / 10), (unsigned)(s_tTop * 10 / 268111 / calls % 10),
                       (unsigned)(s_tCompose * 10 / 268111 / calls / 10), (unsigned)(s_tCompose * 10 / 268111 / calls % 10));
               s_tBottom = s_tTop = s_tCompose = 0;
-              fprintf(stderr, "[audio] %u underruns, %u low-queue refills in the last 5 s\n", (unsigned)un, (unsigned)lo); }
+              fprintf(stderr, "[audio] %u underruns, %u low-queue refills in the last 5 s\n", (unsigned)un, (unsigned)lo);
+              if (s_fpFrames) {
+                  /* ms per frame, tenths: ticks / 268111 / frames */
+                  #define FP10(t) ((unsigned)((uint64_t)(t) * 10 / 268111 / s_fpFrames))
+                  const uint32_t win = (uint32_t)(now - t0);
+                  fprintf(stderr, "[frame] %u frames, ms each: undraw+scroll %u.%u, sim %u.%u, crowd %u.%u, sprites %u.%u, hud %u.%u, "
+                                  "wait+present %u.%u | inside those: 3D plane copy %u.%u | recorder %u.%u | audio pump %u%% of a core\n",
+                          (unsigned)s_fpFrames,
+                          FP10(s_fp[0] + s_fp[1]) / 10, FP10(s_fp[0] + s_fp[1]) % 10, FP10(s_fp[2]) / 10, FP10(s_fp[2]) % 10,
+                          FP10(s_fp[3]) / 10, FP10(s_fp[3]) % 10, FP10(s_fp[4]) / 10, FP10(s_fp[4]) % 10,
+                          FP10(s_fp[5]) / 10, FP10(s_fp[5]) % 10, FP10(s_fp[6]) / 10, FP10(s_fp[6]) % 10,
+                          FP10(s_fpExtra[1]) / 10, FP10(s_fpExtra[1]) % 10, FP10(s_fpExtra[0]) / 10, FP10(s_fpExtra[0]) % 10,
+                          win ? (unsigned)((uint64_t)s_fpExtra[2] * 100 / 268111 / win) : 0u);
+                  #undef FP10
+              }
+              memset(s_fp, 0, sizeof s_fp); memset((void *)s_fpExtra, 0, sizeof s_fpExtra); s_fpFrames = 0; }
             fflush(stderr);       /* the log is block-buffered: what is in it must reach the card */
             s_presentTicks = 0; s_presentCalls = 0;
             t0 = now; shown = 0;

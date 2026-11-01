@@ -210,6 +210,7 @@ static void waitVBlankSyncPresent(uint32_t xorMagic, uint32_t expected, int32_t 
         SetCameraCoordinates(cx, cy);
         /* A frame netplay re-simulates still swaps and sets the camera,
          * which the next frame reads, but is never shown. */
+        RASTER(RASTER_IDLE);        /* (the 3DS times what follows: the wait and the present) */
         if (present)
             Platform_VBlank();
     }
@@ -761,7 +762,7 @@ GameFrameResult GameLoop_Frame(void)
                                  _cameraY.s.i);
 #endif
 #ifdef SWOS_SDL_BUILD
-    { extern void ReplayRec_FrameBegin(void); ReplayRec_FrameBegin(); }
+    { extern void ReplayRec_FrameBegin(void); FPROF_T(pt); ReplayRec_FrameBegin(); FPROF_ADD(0, pt); }
 #endif
     PlayEnqueuedSamples();
     UpdateTime();
@@ -807,7 +808,7 @@ GameFrameResult GameLoop_Frame(void)
     RASTER(RASTER_SPRITES);
     DrawSprites();
 #ifdef SWOS_SDL_BUILD
-    { extern void ReplayRec_CaptureSprites(void); ReplayRec_CaptureSprites(); }
+    { extern void ReplayRec_CaptureSprites(void); FPROF_T(pt); ReplayRec_CaptureSprites(); FPROF_ADD(0, pt); }
 #endif
     RASTER(RASTER_HUD);
     DrawBenchAndSubsMenu();
@@ -830,7 +831,7 @@ GameFrameResult GameLoop_Frame(void)
     /* Post-frame: save coordinates end marker */
     SaveCoordinatesForHighlights((int16_t)0xFFFE, 0, 0);
 #ifdef SWOS_SDL_BUILD
-    { extern void ReplayRec_FrameEnd(void); ReplayRec_FrameEnd(); }
+    { extern void ReplayRec_FrameEnd(void); FPROF_T(pt); ReplayRec_FrameEnd(); FPROF_ADD(0, pt); }
 #endif
 
     if (_saveHighlightScene != 0) {

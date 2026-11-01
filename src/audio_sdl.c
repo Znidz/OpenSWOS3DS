@@ -19,6 +19,7 @@
  * high-resolution counter and is very stable.
  */
 
+#include "raster_bars.h"
 #include "platform_sdl.h"
 #include "rjp1.h"
 #include "sfx_debug.h"
@@ -468,7 +469,9 @@ static int audio_pump_thread(void *unused)
     svcSetThreadPriority(0xFFFF8000u, 0x19);
 #endif
     while (s_pump_run) {
+        FPROF_T(pt);
         AudioSDL_Tick();
+        FPROF_ADD(2, pt);
         SDL_Delay(5);
     }
     return 0;

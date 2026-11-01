@@ -10,6 +10,7 @@
  * per pixel into the streaming SDL texture.
  */
 
+#include "raster_bars.h"
 #include <stdint.h>
 #include "platform_sdl.h"
 #include "crt_effects.h"   /* CRT mask / vignette / curved corners */
@@ -543,7 +544,7 @@ static Uint32 SDLCALL tick_timer_cb(Uint32 interval, void *param)
      * queue-fill check inside AudioSDL_Tick is mutex-guarded so
      * main + worker calling it concurrently doesn't double-advance the
      * RJP1 song state. */
-    AudioSDL_Tick();
+    { FPROF_T(pt); AudioSDL_Tick(); FPROF_ADD(2, pt); }
 
     /* The loader-intro path waits on `currentGameTick` rather than
      * `WaitForVSync`, so the main thread never reaches our render

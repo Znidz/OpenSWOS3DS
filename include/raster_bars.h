@@ -16,6 +16,8 @@
 #ifndef RASTER_BARS_H
 #define RASTER_BARS_H
 
+#include <stdint.h>
+
 #if defined(RASTER_BARS) && !defined(SWOS_SDL_BUILD)
 #include "display.h"
 /* Never in the first lines of a frame: the copper is loading the palette there, a bank at
@@ -24,8 +26,24 @@
 #define RASTER(rgb12)   do { \
         while (((*(volatile uint32_t *)&_custom->vposr >> 8) & 0x1FFu) < 8u) {} \
         _custom->color[0] = (uint16_t)(rgb12); } while (0)
+#elif defined(__3DS__)
+/* The 3DS has no beam to paint: the same markers time the phases instead (n3ds.c, the [frame] log). */
+extern void FrameProf_Phase(unsigned rgb12);
+#define RASTER(rgb12)   FrameProf_Phase(rgb12)
 #else
 #define RASTER(rgb12)   ((void)0)
+#endif
+
+/* A side timer, for work that sits inside a phase: FPROF_T(t) starts it, FPROF_ADD(slot, t) ends it.
+ * Slots: 0 the match recorder, 1 the 3D plane copy, 2 the audio pump. Nothing off the 3DS. */
+#ifdef __3DS__
+extern uint32_t FrameProf_Now(void);
+extern void     FrameProf_Add(int slot, uint32_t t0);
+#define FPROF_T(v)          uint32_t v = FrameProf_Now()
+#define FPROF_ADD(slot, v)  FrameProf_Add((slot), (v))
+#else
+#define FPROF_T(v)          ((void)0)
+#define FPROF_ADD(slot, v)  ((void)0)
 #endif
 
 /* The phases, 12-bit 0x0RGB. */

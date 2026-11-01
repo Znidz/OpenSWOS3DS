@@ -413,6 +413,12 @@ void ReplayRec_MatchStart(void)
     if (_trainingGame != 0 || _gArcadeMode || (ReplayTest_Armed() && !s_rec.path) || s_rec.suppressed)
         return;
 
+#ifdef __3DS__
+    /* Not kept on the 3DS: the file is built and deflated in one go at full time (seconds on the
+     * original 3DS) and the frames hold memory all match. The game's own instant replay and
+     * highlights use their own buffer and are untouched. */
+    return;
+#endif
     rec_free();
     s_rec.on = 1;
     s_rec.open = 0;

@@ -354,7 +354,8 @@ toward the viewer.
 | `menu_back/text/button/selected` | −8, 16, 32, 48 | menu depths |
 | `stands_rise`, `stands_margin` | 48, 40 | side stands: height and distance past the lines |
 | `tier_rows`, `tier_step`, `stands_max` | 14, 8, 40 | side stands' tiers |
-| `goal_rise` | 24 | a goal's base |
+| `goal_rise` | 0 | a goal's base lift (0: it stands on the grass) |
+| `goal_slope` | 30 | a goal's gain per row up its posts (tenths of 1/8 px) |
 | `hoard_rise`, `hoard_slope` | 26, 24 | a board's base lift; gain per row up its face (tenths) |
 | `hoard_y0..y3` | 89, 103, 800, 812 | the boards' world rows (top end, bottom end) |
 | `stands_start` | 74 | the front wall's world row (top end; the bottom is mirrored) |

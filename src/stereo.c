@@ -54,7 +54,7 @@ StereoConfig g_stereoCfg = {
      48,    /* menuSelected: the highlighted one, 6 px out        */
      48,    /* standsRise: the stands 6 px out                    */
      40,    /* standsMargin: pitch pixels past the touchlines     */
-     24,    /* goalRise: a goal's base 3 px out, its bar further  */
+      0,    /* goalRise: a goal's base ON the grass (it stands there like a billboard) */
      14,    /* tierRows: a tier of seating is 14 pitch rows deep  */
       8,    /* tierStep: each tier 1 px further out than the last */
      40,    /* standsMax: the top tier 5 px beyond the first      */
@@ -74,6 +74,7 @@ StereoConfig g_stereoCfg = {
      24,    /* hoardSlope: a board gains 2.4 per row up its face  */
       8,    /* shadowIdx: the shadow colour, flat on the pitch    */
      32,    /* numberLift: two whole-pixel steps above the head   */
+     30,    /* goalSlope: 3.0 a row: the bar ~2 player heights out */
 };
 
 /* Where sprites were drawn, per row: a few [x0,x1) intervals, merged as they come. Present
@@ -172,6 +173,7 @@ static void set_key(const char *k, int32_t v)
     else if (!strcmp(k, "hoard_slope"))   g_stereoCfg.hoardSlope   = (int16_t)v;
     else if (!strcmp(k, "shadow_idx"))    g_stereoCfg.shadowIdx    = (int16_t)v;
     else if (!strcmp(k, "number_lift"))   g_stereoCfg.numberLift   = (int16_t)v;
+    else if (!strcmp(k, "goal_slope"))    g_stereoCfg.goalSlope    = (int16_t)v;
     else fprintf(stderr, "[stereo] stereo.ini: unknown key '%s'\n", k);
 }
 
@@ -191,7 +193,7 @@ static void write_cfg(FILE *f)
                "; the stands as built: front wall row, first wall rows and rise, rows of people per tier, their height and step, the walls between tiers\n"
                "stands_start = %d\nwall1_rows = %d\nwall1_rise = %d\npeople_rows = %d\nrow_h = %d\nrow_step = %d\nwall2_rows = %d\nwall2_rise = %d\n"
                "; boards: depth gained per row up the face (tenths); shadows: their palette index; the number: its lift above the head\n"
-               "hoard_slope = %d\nshadow_idx = %d\nnumber_lift = %d\n",
+               "hoard_slope = %d\nshadow_idx = %d\nnumber_lift = %d\ngoal_slope = %d\n",
             g_stereoCfg.pitchFar, g_stereoCfg.pitchNear, g_stereoCfg.heightGain,
             g_stereoCfg.hud, g_stereoCfg.overlay, g_stereoCfg.limit,
             g_stereoCfg.menuBack, g_stereoCfg.menuText, g_stereoCfg.menuButton,
@@ -201,7 +203,7 @@ static void write_cfg(FILE *f)
             g_stereoCfg.hoardY1, g_stereoCfg.hoardY2, g_stereoCfg.hoardY3,
             g_stereoCfg.standsStartY, g_stereoCfg.wallRows1, g_stereoCfg.wallRise1, g_stereoCfg.peopleRows,
             g_stereoCfg.rowH, g_stereoCfg.rowStep, g_stereoCfg.wallRows2, g_stereoCfg.wallRise2,
-            g_stereoCfg.hoardSlope, g_stereoCfg.shadowIdx, g_stereoCfg.numberLift);
+            g_stereoCfg.hoardSlope, g_stereoCfg.shadowIdx, g_stereoCfg.numberLift, g_stereoCfg.goalSlope);
 }
 
 static char s_cfgDir[512];
@@ -537,8 +539,8 @@ void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
         int32_t h = feet - y;                      /* rows above the feet */
         if (h < 0) h = 0;
         int32_t base = terrain_rise_y(feet + (int32_t)Render_CameraY());  /* up on the terraces */
-        if (s_isGoal)       /* a goal: its base out, the bar further, the net in between */
-            d = clamp_depth(ground_depth(feet) + base + g_stereoCfg.goalRise + h * 3);
+        if (s_isGoal)       /* a goal is a billboard: it stands on the grass at its line and its posts rise like a player's, to ~2 player heights at the bar */
+            d = clamp_depth(ground_depth(feet) + base + g_stereoCfg.goalRise + (h * g_stereoCfg.goalSlope + 5) / 10);
         else                /* a player leans out: feet near the ground, the head ~2 px out */
             d = clamp_depth(ground_depth(feet) + base + g_stereoCfg.heightGain / 2 + h * g_stereoCfg.heightGain / 16);
         if (!s_isGoal) {
@@ -983,6 +985,7 @@ static const StereoParam k_params[] = {
     { "HOARD SLOPE",   &g_stereoCfg.hoardSlope,   2 },
     { "SHADOW COLOUR", &g_stereoCfg.shadowIdx,    1 },
     { "NUMBER LIFT",   &g_stereoCfg.numberLift,   4 },
+    { "GOAL SLOPE",    &g_stereoCfg.goalSlope,    2 },
     { "HOARD TOP",     &g_stereoCfg.hoardY0,      1 },
     { "HOARD BOTTOM",  &g_stereoCfg.hoardY1,      1 },
     { "HOARD 2 TOP",   &g_stereoCfg.hoardY2,      1 },

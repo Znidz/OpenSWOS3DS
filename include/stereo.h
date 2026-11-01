@@ -79,7 +79,7 @@ typedef struct StereoConfig {
     int16_t hoardSlope;   /* a board's rise per pixel row up its face, in 1/80 px (24 = 2.4 in 1/8 px) */
     int16_t shadowIdx;    /* the palette index a sprite's shadow is drawn in: flat on the pitch (0 = off) */
     int16_t numberLift;   /* the player's number and marker float this far above the player's head   */
-    int16_t goalSlope;    /* a goal gains this much (tenths of 1/8 px) per row up its posts: a billboard */
+    int16_t goalHeight;   /* a goal's crossbar height in rows: the frame is upright to it, the net roof recedes behind */
 } StereoConfig;
 
 extern int32_t       g_stereoOn;        /* depth is being recorded */

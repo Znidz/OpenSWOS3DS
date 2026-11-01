@@ -358,7 +358,7 @@ toward the viewer.
 | `stands_rise`, `stands_margin` | 48, 40 | side stands: height and distance past the lines |
 | `tier_rows`, `tier_step`, `stands_max` | 14, 8, 40 | side stands' tiers |
 | `goal_rise` | 0 | a goal's base lift (0: it stands on the grass) |
-| `goal_slope` | 0 | a goal's gain per row up its posts (tenths of 1/8 px); 0 = a flat billboard |
+| `goal_height` | 24 | a goal is a box: its posts and crossbar are one upright card at the goal line up to this many rows; the net's roof recedes behind (top goal), the net below the line lies on the grass nearer (bottom goal) |
 | `hoard_rise`, `hoard_slope` | 26, 24 | a board's base lift; gain per row up its face (tenths) |
 | `hoard_y0..y3` | 89, 103, 800, 812 | the boards' world rows (top end, bottom end) |
 | `stands_start` | 73 | the front wall's world row (top end; the bottom is mirrored) |

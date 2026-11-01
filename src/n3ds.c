@@ -638,7 +638,7 @@ static int32_t main_menu_showing(void);
 static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba);
 
 /* Times the present step so the log can say how much of a frame it takes. */
-static uint64_t s_presentTicks, s_presentCalls, s_tBottom, s_tTop, s_tmark;
+static uint64_t s_presentTicks, s_presentCalls, s_tBottom, s_tTop, s_tmark, s_tCompose;
 static volatile int32_t s_dbgRequest, s_dbgRunning;   /* the 3D checker (n3ds_debug.c) */
 static void debug_modal(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba);
 extern volatile uint16_t _currentGameTick;   /* the 50 Hz game clock (platform_sdl.c) */
@@ -740,10 +740,11 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
             { extern void AudioSDL_TakeStats(uint32_t *, uint32_t *);
               uint32_t un, lo;
               AudioSDL_TakeStats(&un, &lo);
-              fprintf(stderr, "[present] bottom screen %u.%u ms, 3D rows + write %u.%u ms (per call)\n",
+              fprintf(stderr, "[present] bottom screen %u.%u ms, 3D rows + write %u.%u ms (per call), of which composing the rows %u.%u ms\n",
                       (unsigned)(s_tBottom * 10 / 268111 / calls / 10), (unsigned)(s_tBottom * 10 / 268111 / calls % 10),
-                      (unsigned)(s_tTop * 10 / 268111 / calls / 10), (unsigned)(s_tTop * 10 / 268111 / calls % 10));
-              s_tBottom = s_tTop = 0;
+                      (unsigned)(s_tTop * 10 / 268111 / calls / 10), (unsigned)(s_tTop * 10 / 268111 / calls % 10),
+                      (unsigned)(s_tCompose * 10 / 268111 / calls / 10), (unsigned)(s_tCompose * 10 / 268111 / calls % 10));
+              s_tBottom = s_tTop = s_tCompose = 0;
               fprintf(stderr, "[audio] %u underruns, %u low-queue refills in the last 5 s\n", (unsigned)un, (unsigned)lo); }
             fflush(stderr);       /* the log is block-buffered: what is in it must reach the card */
             s_presentTicks = 0; s_presentCalls = 0;
@@ -795,6 +796,7 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
         static uint8_t uL[FRONTBUFFER_MAX_STRIDE_BYTES], uR[FRONTBUFFER_MAX_STRIDE_BYTES];
         const uint8_t *l[8], *r[8];
         int32_t k;
+        const uint64_t tc0 = svcGetSystemTick();
         for (k = 0; k < 8; k++) {
             const int32_t sy = (y + k) * h / TOP_H;
             const int32_t sy2 = (y + k + 1) * h / TOP_H - 1;     /* the last source row it covers */
@@ -821,6 +823,7 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
                 l[k] = r[k] = Stereo_PlainRow(fb, w, sy, tL[k]);    /* flat, on the screen */
             }
         }
+        s_tCompose += svcGetSystemTick() - tc0;
         for (x = 0; x < TOP_W; x++) {
             const int32_t sx = s_xmap[x], sx2 = s_xlast[x];
             uint16_t *pl = outL + x * TOP_H + (TOP_H - 8 - y);

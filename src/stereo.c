@@ -864,22 +864,31 @@ void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t stre
         }
         for (k = 0; k < 2; k++) {
             int32_t a = seg[k][0], b = seg[k][1];
-            int32_t lastRise = -9999, sd = 0, se = 0;
-            for (x = a; x < b; x++) {
-                int32_t sl, sr, rise = rowRise;
-                if (rise == 0 && k == 0) rise = tier_rise((STEREO_FIELD_X0 - m) - ((int32_t)Render_CameraX() + x));
-                else if (rise == 0)      rise = tier_rise(((int32_t)Render_CameraX() + x) - (STEREO_FIELD_X1 + m));
-                if (rise != lastRise) {
-                    lastRise = rise;
-                    sd = clamp_depth(ground_depth(y) + rise);
-                    se = eye_shift(sd, strength);
+            if (b <= a) continue;
+            /* The rise is the same along a run -- the whole row above the stands, or one tier of the
+             * side strips (tierRows pixels wide) -- so each run is a shifted copy, not pixel by pixel. */
+            for (x = a; x < b; ) {
+                int32_t rise = rowRise, xe = b, sd, se, n, i;
+                if (rise == 0) {
+                    const int32_t rows = g_stereoCfg.tierRows > 0 ? g_stereoCfg.tierRows : 1;
+                    const int32_t out = k == 0 ? (STEREO_FIELD_X0 - m) - ((int32_t)Render_CameraX() + x)
+                                               : ((int32_t)Render_CameraX() + x) - (STEREO_FIELD_X1 + m);
+                    rise = tier_rise(out);
+                    if (out >= 0) {            /* this tier lasts until `out` crosses a multiple of rows */
+                        const int32_t same = k == 0 ? out % rows + 1 : rows - out % rows;
+                        if (x + same < xe) xe = x + same;
+                    }
                 }
-                sl = x - se; sr = x + se;
-                if (sl < 0) sl = 0; else if (sl >= w) sl = w - 1;
-                if (sr < 0) sr = 0; else if (sr >= w) sr = w - 1;
-                outL[x] = bg[sl];
-                outR[x] = bg[sr];
-                zL[x] = zR[x] = (int8_t)sd;
+                sd = clamp_depth(ground_depth(y) + rise);
+                se = eye_shift(sd, strength);
+                n = xe - x;
+                if (x - se >= 0 && xe - 1 - se < w) memcpy(outL + x, bg + x - se, (size_t)n);
+                else for (i = x; i < xe; i++) { int32_t sl = i - se; outL[i] = bg[sl < 0 ? 0 : sl >= w ? w - 1 : sl]; }
+                if (x + se >= 0 && xe - 1 + se < w) memcpy(outR + x, bg + x + se, (size_t)n);
+                else for (i = x; i < xe; i++) { int32_t sr = i + se; outR[i] = bg[sr < 0 ? 0 : sr >= w ? w - 1 : sr]; }
+                memset(zL + x, (int8_t)sd, (size_t)n);
+                memset(zR + x, (int8_t)sd, (size_t)n);
+                x = xe;
             }
         }
     }

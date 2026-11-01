@@ -135,7 +135,6 @@ static int32_t s_groundSaved;   /* mode to go back to after Stereo_BeginGround(0
 
 extern Sprite _ballSprite, _ballShadowSprite, _goal1TopSprite, _goal2BottomSprite;
 extern Sprite _team1CurPlayerNumSprite, _team2CurPlayerNumSprite, _playerMarkSprite;
-extern Sprite _cornerFlagSprite, _cornerFlagSprite2;
 
 /* ---- configuration ---------------------------------------------------- */
 
@@ -438,11 +437,8 @@ void Stereo_BeginSprite(const Sprite *spr, const SpriteGraphics *g)
                                   + terrain_rise_y(s_groundRow + (int32_t)Render_CameraY())
                                   + g_stereoCfg.heightGain / 2 + 14 * g_stereoCfg.heightGain / 16
                                   + g_stereoCfg.numberLift);
-    } else if (spr == &_cornerFlagSprite || spr == &_cornerFlagSprite2) {
-        s_mode = MODE_FLAT;        /* a flag stands on the pitch: no lean, its top as near the ground as its foot */
-        s_flatDepth = clamp_depth(ground_depth(s_groundRow));
     } else {
-        s_mode = MODE_UPRIGHT;     /* players, keepers, referee, goals */
+        s_mode = MODE_UPRIGHT;     /* players, keepers, referee, goals, corner flags (as tall as a player) */
     }
 }
 

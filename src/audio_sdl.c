@@ -144,7 +144,13 @@ static int16_t           s_out_buf[48000 * 2 / 50 + 128];
 static int32_t s_queueMs = QUEUE_TARGET_MS;
 static int32_t s_pumpDelayMs = 5;
 static int32_t s_pumpPrio = 0x19;
+#ifdef __3DS__
+/* 512, not 1024: with 1024-frame buffers a click came round every three of them (139 ms), heard as crackle;
+ * 512 cleared it (tester, 2026-11-01, on the checker's AUDIO page). */
+static int32_t s_deviceSamples = 512;
+#else
 static int32_t s_deviceSamples = 1024;     /* the device buffer, in frames */
+#endif
 static int32_t s_deviceRate = AUDIO_SAMPLE_RATE;
 static int32_t s_mixerOn = 1;              /* 0: the mixer is skipped (is the mixing what costs the time?) */
 static int32_t s_tuneTone;                 /* 0 off, 1 440 Hz, 2 1 kHz, 3 one click every 100 ms: the device alone */

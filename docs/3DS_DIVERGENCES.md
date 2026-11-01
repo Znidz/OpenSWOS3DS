@@ -267,6 +267,9 @@ game clock by design.** Only lines ~20, 33, 380 and 806–816 of that log are pl
 - **Queue target 200 ms** (80 elsewhere) to ride out a long frame.
 - **The pump thread runs above the game's priority** (`svcSetThreadPriority(…, 0x19)` vs the game's `0x30`).
   One core runs both; at the game's own priority the pump only got a turn when the picture was finished.
+- **The crackle was the device buffer (fixed 2026-11-01).** Both phone clips showed a click every 139.3 ms — three
+  1,024-frame buffers at 22,050 Hz. The owner set DEVICE BUFFER to 512 on the checker's AUDIO page and the crackle went;
+  512 is now the 3DS default (`s_deviceSamples`). The cause inside the driver is not known; 256 was not tried.
 - **Diagnostics, not a fix:** the owner reported "a regular rhythm interrupting the audio". The log now
   shows the device settings and **underruns / low-queue refills every 5 s**, and the pump's share of a core.
   In the one log checked, 4 of 89 windows had a single underrun — no steady cause found. **Open.**

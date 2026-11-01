@@ -60,6 +60,7 @@ These are the rules the individual decisions follow. They were mostly arrived at
 | `packaging/3ds/*` | `.rsf`, banner, banner sound, icon, title logo | CIA metadata |
 | `docs/3DS.md`, `docs/images/3ds/*` | the player's guide and its pictures | |
 | `docs/3DS_DIVERGENCES.md` | this file | |
+| `include/audio_tune.h` | the audio settings the checker's AUDIO page edits | 4.8 |
 
 ---
 
@@ -278,6 +279,16 @@ game clock by design.** Only lines ~20, 33, 380 and 806–816 of that log are pl
   (two ends). Everything is logged as `[3dcheck]` lines the maintainer can read back. *Why:* each art
   question used to cost a build, an install and a screenshot round trip. The checker pauses the game, so
   its windows distort the frame-rate log — see 4.6.
+- **The AUDIO page** (X again, after TUNE; `include/audio_tune.h`, `src/audio_sdl.c`) changes the sound's settings
+  *while it plays* and saves them to `audio.ini` beside `stereo.ini`: **device rate** and **device buffer** (the device is
+  closed and reopened; the log says what the driver gave), the **queue** length, the **pump's wait and priority**, the
+  per-voice **low-pass** (`g_rjp1LowPass`, `src/rjp1.c`), **mono**, **mixer on/off** (is the synthesis what costs the
+  time?) and a **test tone** (440 Hz, 1 kHz, or a click every 100 ms) that replaces the mix. The tone is the key test:
+  if it crackles the fault is the device or its driver, not the synthesis. The pump keeps running while the checker has
+  the game frozen, so the music can be listened to as each setting changes; live numbers (queue now, ticks per second —
+  50 is real time — silence pads, underruns) are on the page. *Why:* the clip analysis found a click repeating every
+  139.3 ms, which is three 1,024-sample buffers at 22,050 Hz; the buffer-size test (1024 → 2048 should double it) needed
+  a build per guess before this.
 - **The TUNE page** edits `stereo.ini` values live on the console and saves them. The list is in
   `Stereo_Params` (section 6).
 - **`[frame]`** (new): milliseconds per frame by phase — undraw+scroll, sim, crowd, sprites, HUD,

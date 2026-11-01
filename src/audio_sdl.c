@@ -29,6 +29,11 @@
 #include <SDL.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
+#ifdef __3DS__
+#include "swos_io.h"
+#include "audio_tune.h"
+#endif
 
 #ifdef __3DS__
 /* 268 MHz: the music is synthesised on the CPU, and at 44.1 kHz it cannot keep the queue
@@ -134,6 +139,38 @@ static int16_t           s_out_buf[48000 * 2 / 50 + 128];
 #else
 #define QUEUE_TARGET_MS  80
 #endif
+/* The queue target, pump interval and pump priority can be changed while it plays (3DS: the checker's
+ * AUDIO page); the macro is the default. */
+static int32_t s_queueMs = QUEUE_TARGET_MS;
+static int32_t s_pumpDelayMs = 5;
+static int32_t s_pumpPrio = 0x19;
+static int32_t s_deviceSamples = 1024;     /* the device buffer, in frames */
+static int32_t s_deviceRate = AUDIO_SAMPLE_RATE;
+static int32_t s_mixerOn = 1;              /* 0: the mixer is skipped (is the mixing what costs the time?) */
+static int32_t s_tuneTone;                 /* 0 off, 1 440 Hz, 2 1 kHz, 3 one click every 100 ms: the device alone */
+static uint32_t s_ticksTotal, s_underrunsTotal, s_padsTotal;
+#ifdef __3DS__
+void AudioTune_Load(void);
+#endif
+
+/* A test signal in place of the mix: if THIS crackles the fault is the device or its driver, not the
+ * synthesis. Phase carries over from one tick to the next. */
+static void tone_fill(int16_t *o, int frames, int freq)
+{
+    static uint32_t ph, clk;
+    for (int i = 0; i < frames; i++) {
+        int16_t v;
+        if (s_tuneTone == 3) {
+            v = (clk % (uint32_t)(freq / 10)) == 0 ? 20000 : 0;
+            clk++;
+        } else {
+            const float f = s_tuneTone == 1 ? 440.0f : 1000.0f;
+            v = (int16_t)(sinf(6.2831853f * (float)ph / 65536.0f) * 9000.0f);
+            ph = (ph + (uint32_t)(f * 65536.0f / (float)freq)) & 0xFFFFu;
+        }
+        o[i * 2] = o[i * 2 + 1] = v;
+    }
+}
 
 /* Dedicated audio-pump thread. Keeping the SDL queue full is the audio engine's
  * one hard real-time job, but our only pumps were the game loop (Platform_VBlank)
@@ -150,6 +187,9 @@ static int audio_pump_thread(void *unused);
 int AudioSDL_Init(int mono)
 {
     s_audio_mono = mono ? 1 : 0;
+#ifdef __3DS__
+    AudioTune_Load();
+#endif
 #if SWOS_AUDIO_DISABLED
     /* Audio disabled at compile time — return success so platform init
      * continues; s_audio_dev stays 0 and AudioSDL_Tick early-returns. */
@@ -164,14 +204,14 @@ int AudioSDL_Init(int mono)
 
     SDL_AudioSpec want;
     SDL_zero(want);
-    want.freq     = AUDIO_SAMPLE_RATE;
+    want.freq     = s_deviceRate;
     want.format   = AUDIO_S16SYS;  /* 16-bit out: the RJP1 mix is 8-bit, but the
                                     * master-volume / fade scaling is applied in the
                                     * 8->16 conversion so it's lossless (no 8-bit
                                     * quantisation grain — the Amiga did volume in
                                     * analog after the DAC). */
     want.channels = 2;
-    want.samples  = 1024;         /* driver hint only; we use QueueAudio */
+    want.samples  = (Uint16)s_deviceSamples;   /* driver hint only; we use QueueAudio */
     want.callback = NULL;         /* queue mode — we push, SDL pulls */
     want.userdata = NULL;
 
@@ -188,7 +228,7 @@ int AudioSDL_Init(int mono)
     }
     s_master_volume = 0;
     fprintf(stderr, "[audio] device %d Hz, %d ch, %d samples/buffer, queue target %d ms\n",
-            (int)s_audio_spec.freq, (int)s_audio_spec.channels, (int)s_audio_spec.samples, QUEUE_TARGET_MS);
+            (int)s_audio_spec.freq, (int)s_audio_spec.channels, (int)s_audio_spec.samples, s_queueMs);
     SDL_PauseAudioDevice(s_audio_dev, 0);
 
     /* Start the dedicated pump so the queue stays full regardless of render load.
@@ -299,9 +339,13 @@ void AudioSDL_Tick(void)
     const Uint32 out_bytes = (Uint32)samples_per_tick * 2;   /* S16 device bytes to queue */
 
     /* Queue sizes are device (S16) bytes = 4 per stereo frame. */
-    Uint32 target_bytes = (Uint32)freq * 4 * QUEUE_TARGET_MS / 1000;
+    Uint32 target_bytes = (Uint32)freq * 4 * (Uint32)s_queueMs / 1000;
 
     SDL_LockMutex(s_mtx);
+    if (!s_audio_dev) {                 /* the device is being reopened with other settings */
+        SDL_UnlockMutex(s_mtx);
+        return;
+    }
 
     /* Re-check the queue inside the lock — if the other thread just
      * topped it up, we're done. This is what prevents two threads from
@@ -314,7 +358,8 @@ void AudioSDL_Tick(void)
         return;
     }
     s_ticksMixed++;
-    if (queued_bytes == 0) s_underruns++;
+    s_ticksTotal++;
+    if (queued_bytes == 0) { s_underruns++; s_underrunsTotal++; }
     else if (queued_bytes < target_bytes / 4) s_lowqueue++;
 
     if (s_fade_left > 0) {
@@ -324,7 +369,7 @@ void AudioSDL_Tick(void)
             stop_song_locked();
     }
 
-    if (s_player_active) {
+    if (s_player_active && s_mixerOn) {
         SDL_memset(s_mix_buf, 0, (size_t)samples_per_tick);
         RJP1_HandleTick(&s_player);
         if (s_loop_song && RJP1_IsFinished(&s_player)) {
@@ -354,7 +399,7 @@ void AudioSDL_Tick(void)
     /* SFX player — only ticks when music+sfx mixing routed SFX to its own player
      * (s_sfx_active). Idle otherwise, so the normal game (SFX in s_player) is
      * unchanged. No loop handling: the SFX bank is trigger-driven. */
-    if (s_sfx_active) {
+    if (s_sfx_active && s_mixerOn) {
         SDL_memset(s_sfx_mix_buf, 0, (size_t)samples_per_tick);
         RJP1_HandleTick(&s_sfx_player);
         RJP1_MixSamples(&s_sfx_player, freq, s_sfx_mix_buf, samples_per_tick);
@@ -447,6 +492,8 @@ void AudioSDL_Tick(void)
 
     /* Enqueue inside the lock so a concurrent caller's queue re-check sees the
      * new size. SDL_QueueAudio is internally locked; nesting s_mtx is safe. */
+    if (s_tuneTone)
+        tone_fill(s_out_buf, samples_per_tick / 2, freq);
     SDL_QueueAudio(s_audio_dev, s_out_buf, out_bytes);
 
 #ifndef SWOS_WASM_BUILD
@@ -459,6 +506,7 @@ void AudioSDL_Tick(void)
     queued_bytes = SDL_GetQueuedAudioSize(s_audio_dev);
     if (queued_bytes + out_bytes < target_bytes) {
         s_silencePads++;
+        s_padsTotal++;
         SDL_memset(s_out_buf, 0, (size_t)out_bytes);
         SDL_QueueAudio(s_audio_dev, s_out_buf, out_bytes);
     }
@@ -466,6 +514,140 @@ void AudioSDL_Tick(void)
 
     SDL_UnlockMutex(s_mtx);
 }
+
+#ifdef __3DS__
+/* ---- the checker's AUDIO page (include/audio_tune.h) -------------------------------------------- */
+extern int32_t g_rjp1LowPass;   /* rjp1.c: the 6 kHz three-stage filter per voice */
+static int32_t s_monoSetting;
+
+static const int32_t k_rates[]   = { 11025, 16000, 22050, 32000, 32728, 44100, 48000 };
+static const int32_t k_buffers[] = { 256, 512, 1024, 2048, 4096 };
+static const int32_t k_queues[]  = { 60, 100, 150, 200, 300, 400 };
+static const int32_t k_waits[]   = { 1, 2, 5, 10, 20 };
+static const int32_t k_prios[]   = { 24, 25, 28, 32, 40, 48, 56 };   /* lower number = higher priority; the game is 48 */
+static const int32_t k_onoff[]   = { 0, 1 };
+static const int32_t k_tones[]   = { 0, 1, 2, 3 };
+
+static const AudioParam s_params[] = {
+    { "DEVICE RATE",   &s_deviceRate,    k_rates,   7 },
+    { "DEVICE BUFFER", &s_deviceSamples, k_buffers, 5 },
+    { "QUEUE MS",      &s_queueMs,       k_queues,  6 },
+    { "PUMP WAIT MS",  &s_pumpDelayMs,   k_waits,   5 },
+    { "PUMP PRIORITY", &s_pumpPrio,      k_prios,   7 },
+    { "LOW-PASS",      &g_rjp1LowPass,   k_onoff,   2 },
+    { "MONO",          &s_monoSetting,   k_onoff,   2 },
+    { "MIXER ON",      &s_mixerOn,       k_onoff,   2 },
+    { "TEST TONE",     &s_tuneTone,      k_tones,   4 },
+};
+#define N_PARAMS ((int32_t)(sizeof s_params / sizeof s_params[0]))
+
+const AudioParam *AudioTune_Params(int32_t *n)
+{
+    s_monoSetting = s_audio_mono;
+    *n = N_PARAMS;
+    return s_params;
+}
+
+/* Close the device and open it again with the rate and buffer now chosen. The pump finds no device while this
+ * runs (AudioSDL_Tick checks under the same lock) and carries on with the new one. */
+static void reopen_device(void)
+{
+    SDL_AudioSpec want;
+    if (!s_mtx)
+        return;
+    SDL_LockMutex(s_mtx);
+    if (s_audio_dev) {
+        SDL_PauseAudioDevice(s_audio_dev, 1);
+        SDL_ClearQueuedAudio(s_audio_dev);
+        SDL_CloseAudioDevice(s_audio_dev);
+        s_audio_dev = 0;
+    }
+    SDL_zero(want);
+    want.freq = s_deviceRate;
+    want.format = AUDIO_S16SYS;
+    want.channels = 2;
+    want.samples = (Uint16)s_deviceSamples;
+    s_audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &s_audio_spec,
+                                      SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_SAMPLES_CHANGE);
+    if (s_audio_dev == 0) {
+        fprintf(stderr, "[audio] reopen failed (%d Hz, %d samples): %s\n", (int)s_deviceRate, (int)s_deviceSamples,
+                SDL_GetError());
+    } else {
+        fprintf(stderr, "[audio] reopened: asked %d Hz / %d samples, got %d Hz / %d samples\n", (int)s_deviceRate,
+                (int)s_deviceSamples, (int)s_audio_spec.freq, (int)s_audio_spec.samples);
+        SDL_PauseAudioDevice(s_audio_dev, 0);
+    }
+    SDL_UnlockMutex(s_mtx);
+}
+
+void AudioTune_Changed(int32_t index)
+{
+    if (index < 0 || index >= N_PARAMS)
+        return;
+    s_audio_mono = s_monoSetting;
+    if (s_params[index].value == &s_deviceRate || s_params[index].value == &s_deviceSamples)
+        reopen_device();
+    fprintf(stderr, "[audio] set %s = %d\n", s_params[index].name, (int)*s_params[index].value);
+}
+
+void AudioTune_Live(AudioLive *o)
+{
+    memset(o, 0, sizeof *o);
+    if (s_audio_dev && s_audio_spec.freq) {
+        o->queuedMs = (uint32_t)((uint64_t)SDL_GetQueuedAudioSize(s_audio_dev) * 1000 / ((uint64_t)s_audio_spec.freq * 4));
+        o->rate = (uint32_t)s_audio_spec.freq;
+        o->samples = (uint32_t)s_audio_spec.samples;
+    }
+    o->ticks = s_ticksTotal;
+    o->pads = s_padsTotal;
+    o->underruns = s_underrunsTotal;
+}
+
+static const char *cfg_path(void)
+{
+    static char path[160];
+    snprintf(path, sizeof path, "%s/audio.ini", swos_user_dir());
+    return path;
+}
+
+int32_t AudioTune_Save(void)
+{
+    FILE *f = fopen(cfg_path(), "w");
+    if (!f)
+        return 0;
+    fprintf(f, "rate=%d\nbuffer=%d\nqueue=%d\npump_wait=%d\npump_priority=%d\nlowpass=%d\nmono=%d\n",
+            (int)s_deviceRate, (int)s_deviceSamples, (int)s_queueMs, (int)s_pumpDelayMs, (int)s_pumpPrio,
+            (int)g_rjp1LowPass, (int)s_audio_mono);
+    fclose(f);
+    fprintf(stderr, "[audio] saved %s\n", cfg_path());
+    return 1;
+}
+
+void AudioTune_Load(void)
+{
+    char line[80];
+    FILE *f = fopen(cfg_path(), "r");
+    if (!f)
+        return;
+    while (fgets(line, sizeof line, f)) {
+        char key[32];
+        int v;
+        if (sscanf(line, "%31[^=]=%d", key, &v) != 2)
+            continue;
+        if (!strcmp(key, "rate") && v >= 8000 && v <= 48000)          s_deviceRate = v;
+        else if (!strcmp(key, "buffer") && v >= 64 && v <= 8192)      s_deviceSamples = v;
+        else if (!strcmp(key, "queue") && v >= 20 && v <= 1000)       s_queueMs = v;
+        else if (!strcmp(key, "pump_wait") && v >= 1 && v <= 100)     s_pumpDelayMs = v;
+        else if (!strcmp(key, "pump_priority") && v >= 24 && v <= 63) s_pumpPrio = v;
+        else if (!strcmp(key, "lowpass"))                             g_rjp1LowPass = v ? 1 : 0;
+        else if (!strcmp(key, "mono"))                                s_audio_mono = v ? 1 : 0;
+    }
+    fclose(f);
+    fprintf(stderr, "[audio] settings from %s: %d Hz, %d samples, queue %d ms, pump every %d ms at priority %d, low-pass %d, mono %d\n",
+            cfg_path(), (int)s_deviceRate, (int)s_deviceSamples, (int)s_queueMs, (int)s_pumpDelayMs, (int)s_pumpPrio,
+            (int)g_rjp1LowPass, (int)s_audio_mono);
+}
+#endif /* __3DS__ */
 
 /* Dedicated pump loop (see s_pump_thread). Polls faster than the queue drains so
  * an underrun never has time to form; AudioSDL_Tick's own target check stops it
@@ -481,13 +663,20 @@ static int audio_pump_thread(void *unused)
     /* One core runs the game and this: at the game's own priority the pump only gets a turn when
      * the picture is finished, so a long frame leaves the queue empty and the music crackles.
      * Above it, the pump runs the moment it wakes (0x30 is the game's; lower is higher). */
-    svcSetThreadPriority(0xFFFF8000u, 0x19);
+    int32_t prioNow = 0x19;
+    svcSetThreadPriority(0xFFFF8000u, prioNow);
 #endif
     while (s_pump_run) {
         FPROF_T(pt);
         AudioSDL_Tick();
         FPROF_ADD(2, pt);
-        SDL_Delay(5);
+#ifdef __3DS__
+        if (prioNow != s_pumpPrio) {            /* changed on the checker's AUDIO page */
+            prioNow = s_pumpPrio;
+            svcSetThreadPriority(0xFFFF8000u, prioNow);
+        }
+#endif
+        SDL_Delay((Uint32)s_pumpDelayMs);
     }
     return 0;
 }

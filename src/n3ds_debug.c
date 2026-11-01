@@ -15,6 +15,7 @@
  *
  *   modes (X)   POINT  a sample          PIXEL  zoomed, one source pixel, and its neighbours
  *               LINE   two ends          TUNE   the stereo.ini values, edited live; A saves
+ *               AUDIO  the sound's settings and tests, changed while it plays; A saves audio.ini
  *
  *   circle pad / D-pad left-right: move the cursor      D-pad up-down: its depth (1/8 pixel)
  *   L / R: zoom out / in      A: mark      Y: clear marks      SELECT: wanted depth := surface
@@ -29,20 +30,21 @@
 #include <stdarg.h>
 #include "n3ds.h"
 #include "stereo.h"
+#include "audio_tune.h"
 
 #define TOP_W 400
 #define TOP_H 240
 #define RGB(r, g, b) ((uint16_t)((((r) >> 3) << 11) | (((g) >> 2) << 5) | ((b) >> 3)))
 
-enum { M_POINT, M_PIXEL, M_LINE, M_TUNE, M_COUNT };
-static const char *const k_modeName[M_COUNT] = { "POINT", "PIXEL", "LINE", "TUNE" };
+enum { M_POINT, M_PIXEL, M_LINE, M_TUNE, M_AUDIO, M_COUNT };
+static const char *const k_modeName[M_COUNT] = { "POINT", "PIXEL", "LINE", "TUNE", "AUDIO" };
 static const char *const k_kindName[] = { "PITCH", "STANDS", "HOARDING", "SPRITE", "HUD", "OVERLAY" };
 static const int32_t k_zoom[] = { 1, 2, 3, 4, 6, 8 };
 
 typedef struct { int32_t x, y, now, want, kind; } Mark;
 
 static int32_t s_active, s_mode, s_zoomI, s_cx = 200, s_cy = 120, s_want, s_manual;
-static int32_t s_tuneSel, s_numMarks, s_lineN;
+static int32_t s_tuneSel, s_audSel, s_numMarks, s_lineN;
 static Mark    s_marks[32], s_lineA, s_lineB;
 static char    s_msg[48];
 static int32_t s_msgTicks;
@@ -194,6 +196,30 @@ void N3DSDbg_Input(uint32_t held, uint32_t down, int32_t padX, int32_t padY)
     }
     if (down & KEY_Y) { s_numMarks = 0; s_lineN = 0; say("MARKS CLEARED"); }
 
+    if (s_mode == M_AUDIO) {
+        int32_t na, ci, k;
+        const AudioParam *ap = AudioTune_Params(&na);
+        if (repeat(held, KEY_DUP, 0))   s_audSel = (s_audSel + na - 1) % na;
+        if (repeat(held, KEY_DDOWN, 1)) s_audSel = (s_audSel + 1) % na;
+        /* one step per press (a rate or buffer change reopens the sound, so no auto-repeat) */
+        k = (down & KEY_DRIGHT) ? 1 : (down & KEY_DLEFT) ? -1 : 0;
+        if (k) {
+            for (ci = 0; ci < ap[s_audSel].nChoices - 1 && ap[s_audSel].choices[ci] != *ap[s_audSel].value; ci++)
+                ;
+            if (ap[s_audSel].choices[ci] != *ap[s_audSel].value) ci = 0;
+            ci += k;
+            if (ci < 0) ci = 0;
+            if (ci > ap[s_audSel].nChoices - 1) ci = ap[s_audSel].nChoices - 1;
+            *ap[s_audSel].value = ap[s_audSel].choices[ci];
+            AudioTune_Changed(s_audSel);
+        }
+        if (down & KEY_A) {
+            if (AudioTune_Save()) say("AUDIO.INI SAVED");
+            else say("SAVE FAILED");
+        }
+        return;
+    }
+
     if (s_mode == M_TUNE) {
         if (repeat(held, KEY_DUP, 0))   s_tuneSel = (s_tuneSel + n - 1) % n;
         if (repeat(held, KEY_DDOWN, 1)) s_tuneSel = (s_tuneSel + 1) % n;
@@ -315,7 +341,7 @@ void N3DSDbg_DrawTop(uint16_t *L, uint16_t *R)
             }
         }
     }
-    if (s_mode == M_TUNE)
+    if (s_mode == M_TUNE || s_mode == M_AUDIO)
         return;
 
     for (i = 0; i < s_numMarks; i++)
@@ -364,7 +390,38 @@ void N3DSDbg_DrawBottom(void)
     else
         line(r++, grey, "SLIDER %d OF 256", (int)s_strength);
 
-    if (s_mode == M_TUNE) {
+    if (s_mode == M_AUDIO) {
+        static const char *const k_toneName[] = { "OFF", "440 HZ", "1 KHZ", "CLICKS" };
+        static uint32_t prevTicks;
+        static int64_t prevT;
+        static uint32_t ticksPerSec;
+        int32_t na, i;
+        AudioLive live;
+        const AudioParam *ap = AudioTune_Params(&na);
+        const int64_t now = (int64_t)osGetTime();
+        AudioTune_Live(&live);
+        if (prevT == 0 || now - prevT >= 1000) {
+            if (prevT != 0) ticksPerSec = (uint32_t)((int64_t)(live.ticks - prevTicks) * 1000 / (now - prevT));
+            prevT = now;
+            prevTicks = live.ticks;
+        }
+        r++;
+        for (i = 0; i < na; i++) {
+            char val[16];
+            const int32_t v = *ap[i].value;
+            if (!strcmp(ap[i].name, "TEST TONE")) snprintf(val, sizeof val, "%s", k_toneName[v & 3]);
+            else if (ap[i].nChoices == 2) snprintf(val, sizeof val, "%s", v ? "ON" : "OFF");
+            else snprintf(val, sizeof val, "%d", (int)v);
+            line(r++, i == s_audSel ? yel : white, "%s %-14s %s", i == s_audSel ? "+" : " ", ap[i].name, val);
+        }
+        r++;
+        line(r++, cyan, "DEVICE %u HZ, %u SAMPLES", (unsigned)live.rate, (unsigned)live.samples);
+        line(r++, cyan, "QUEUE NOW %u MS   TICKS/S %u (50 = REAL)", (unsigned)live.queuedMs, (unsigned)ticksPerSec);
+        line(r++, cyan, "SILENCE PADS %u   UNDERRUNS %u", (unsigned)live.pads, (unsigned)live.underruns);
+        line(r++, grey, "UP DOWN CHOOSE  LEFT RIGHT CHANGE  A SAVE");
+        line(r++, grey, "TEST TONE REPLACES THE MUSIC: IF IT CRACKLES");
+        line(r++, grey, "IT IS THE DEVICE; IF NOT, THE MIXING.");
+    } else if (s_mode == M_TUNE) {
         int32_t n, i, first;
         const StereoParam *p = Stereo_Params(&n);
         first = s_tuneSel > 11 ? s_tuneSel - 11 : 0;
@@ -396,7 +453,7 @@ void N3DSDbg_DrawBottom(void)
         line(r++, grey, "MOVE: CIRCLE PAD, D-PAD LEFT RIGHT");
         line(r++, grey, "DEPTH: D-PAD UP DOWN   SELECT: RESET");
         line(r++, grey, "L R: ZOOM    A: MARK    Y: CLEAR");
-        line(r++, grey, "X: MODE (POINT PIXEL LINE TUNE)");
+        line(r++, grey, "X: MODE (POINT PIXEL LINE TUNE AUDIO)");
         line(r++, grey, "B OR START: BACK TO THE MATCH");
         if (s_mode == M_LINE)
             line(r++, grey, "%s", s_lineN == 1 ? "A: SECOND END" : "A: FIRST END");

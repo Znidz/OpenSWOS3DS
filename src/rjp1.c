@@ -549,6 +549,9 @@ void RJP1_StartSequenceByWaveId(RJP1_Player *p, int channel, int waveId)
     start_sequence_with_data(p, ch, channel, seq_data, NULL);
 }
 
+/* 0: skip the per-voice 6 kHz low-pass (the 3DS checker's AUDIO page: crackle and CPU tests). */
+int32_t g_rjp1LowPass = 1;
+
 void RJP1_MixSamples(RJP1_Player *p, int sample_rate, int8_t *buf, int len)
 {
     if (!p->loaded) return;
@@ -624,10 +627,12 @@ void RJP1_MixSamples(RJP1_Player *p, int sample_rate, int8_t *buf, int len)
             /* 3-stage cascaded one-pole low-pass — matches the analog
              * chain on real Amigas more closely. */
             float fy = (float)raw;
-            hw->filter_state[0] = a * fy                  + oneA * hw->filter_state[0];
-            hw->filter_state[1] = a * hw->filter_state[0] + oneA * hw->filter_state[1];
-            hw->filter_state[2] = a * hw->filter_state[1] + oneA * hw->filter_state[2];
-            fy = hw->filter_state[2];
+            if (g_rjp1LowPass) {
+                hw->filter_state[0] = a * fy                  + oneA * hw->filter_state[0];
+                hw->filter_state[1] = a * hw->filter_state[0] + oneA * hw->filter_state[1];
+                hw->filter_state[2] = a * hw->filter_state[1] + oneA * hw->filter_state[2];
+                fy = hw->filter_state[2];
+            }
 
             b += (int)fy;
             if (b < -128) b = -128;

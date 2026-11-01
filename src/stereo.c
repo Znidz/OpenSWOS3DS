@@ -393,7 +393,14 @@ void Stereo_PitchDrawn(const uint8_t *fb)
     memcpy(s->stamp, fb, (size_t)n);
     memset(s->dep, (uint8_t)STEREO_DEPTH_PITCH, (size_t)n);
     memset(s->spans, 0, (size_t)(SCREEN_HEIGHT + 1) * sizeof(RowSpans));
-    memset(s->hudMask, 0, (size_t)n);
+    /* hudMask is set only on rows rowHud marks (Stereo_MarkRow), so clear just those: the
+     * whole plane was ~1/5 of this call and the HUD is a few dozen rows. */
+    {
+        int32_t y, w = FRONTBUFFER_ROW_STRIDE_BYTES;
+        for (y = 0; y <= SCREEN_HEIGHT; y++)
+            if (s->rowHud[y] && (y + 1) * w <= s_planeBytes)
+                memset(s->hudMask + y * w, 0, (size_t)w);
+    }
     memset(s->rowHud, 0, (size_t)(SCREEN_HEIGHT + 1));
     s_hudN = 0;
     s_hudUsed = 0;

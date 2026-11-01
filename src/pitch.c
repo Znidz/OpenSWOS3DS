@@ -960,22 +960,25 @@ void DrawChunkyPitch(void)
                     tile = (uint8_t *)PitchMap_Tile(ptrIdx, tile);
             }
 
-            for (int row = 0; row < PITCH_TILE_SIZE; row++) {
-                int py = screenY + row;
-                if (py < 0 || py >= fbH) continue;
-                uint8_t *dstRow = fb + py * fbW;
-                if (tile) {
-                    const uint8_t *srcRow = tile + row * PITCH_TILE_SIZE;
-                    for (int col = 0; col < PITCH_TILE_SIZE; col++) {
-                        int px = screenX + col;
-                        if (px < 0 || px >= fbW) continue;
-                        dstRow[px] = srcRow[col];
-                    }
-                } else {
-                    for (int col = 0; col < PITCH_TILE_SIZE; col++) {
-                        int px = screenX + col;
-                        if (px < 0 || px >= fbW) continue;
-                        dstRow[px] = 0;
+            /* One clipped copy per tile row, not a bounds-checked store per pixel: the
+             * columns of this tile that are on screen are the same for all of its rows, and
+             * so are the rows. (Byte-identical to the per-pixel loop it replaces; the 3DS
+             * spent ~6 ms a frame here.) */
+            {
+                const int cx0 = screenX < 0 ? -screenX : 0;
+                const int cx1 = (screenX + PITCH_TILE_SIZE > fbW) ? fbW - screenX : PITCH_TILE_SIZE;
+                const int ry0 = screenY < 0 ? -screenY : 0;
+                const int ry1 = (screenY + PITCH_TILE_SIZE > fbH) ? fbH - screenY : PITCH_TILE_SIZE;
+                const int n = cx1 - cx0;
+                if (n > 0) {
+                    uint8_t *dst = fb + (screenY + ry0) * fbW + screenX + cx0;
+                    if (tile) {
+                        const uint8_t *src = tile + ry0 * PITCH_TILE_SIZE + cx0;
+                        for (int row = ry0; row < ry1; row++, dst += fbW, src += PITCH_TILE_SIZE)
+                            memcpy(dst, src, (size_t)n);
+                    } else {
+                        for (int row = ry0; row < ry1; row++, dst += fbW)
+                            memset(dst, 0, (size_t)n);
                     }
                 }
             }

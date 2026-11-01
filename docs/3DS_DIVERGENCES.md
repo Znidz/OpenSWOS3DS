@@ -230,7 +230,7 @@ Each item is *problem → what we found → decision → alternatives*.
 
 ### 4.6 Performance — what was found and what was done
 
-**Frame budget (log of build `5a63c1f`, original 3DS, 3D on).** ~26.5 game ticks/s → **~37.7 ms a frame**;
+**Frame budget (log of build `5a63c1f`; build `d5bdb5d`'s `[frame]` line then gave: undraw+scroll 9.0 ms, game logic+crowd+sprites+HUD ~2 ms, present ~27 ms of which composing ~11, writing ~12, bottom screen 1.9; audio 0 underruns, original 3DS, 3D on).** ~26.5 game ticks/s → **~37.7 ms a frame**;
 the present call is **~27 ms** of that (bottom screen 1.9, top screen 22–25); everything the game itself does
 is **~10–11 ms.** So the original code is at most about a quarter of a frame — which is why most of the
 work is on the present path, and why dropping original code was judged secondary.
@@ -247,6 +247,8 @@ Built (each is output-identical where it can be, and tested):
 | stands rows and side strips as runs of copies | host benchmark: a stands row cost 5–25× a pitch row | side strips ~2.5× cheaper, output hash identical over 800+ camera/strength/setting combinations |
 | touch screen drawn in memory, copied once and only when changed; menus redraw changed rows only | tearing; wasted redraw | no tearing, fewer copies |
 | fades finish at once on the 3DS | game clock is ~half speed, and the timer thread rendered full 3D frames of a fade nobody sees; two fades per replay scene | **[unverified on hardware]** |
+| pitch redrawn a clipped row of a tile at a time (`DrawChunkyPitch`, `src/pitch.c`) | `[frame]` of build d5bdb5d: undraw+scroll was a constant **9.0 ms** a frame; on SDL the whole pitch is redrawn every frame (the Amiga blitter scrolled it), with two bounds checks per pixel | output identical to the old loop over 16,000 camera/width cases; **[unverified on hardware]** |
+| plane copy clears only the HUD rows (`Stereo_PitchDrawn`) | 3.1 ms of that 9 ms; the HUD mask is set on a few dozen rows only | stereo golden hash unchanged |
 | whole-match recorder off on the 3DS | built and deflated the file at full time (seconds on an original 3DS) and held ~1.6 MB+ all match | **[unverified on hardware]** |
 
 *What the fork leaves alone:* the game's own **instant replay and highlights** use their own ring buffer

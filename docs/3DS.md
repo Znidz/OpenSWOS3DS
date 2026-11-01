@@ -74,7 +74,8 @@ On a desktop, `SWOS_STEREO=1` shows the same two eyes as a red/cyan anaglyph.
 
 ## Platform notes
 
-- The picture is the widescreen render at the 3DS's shape, 454 × 272, scaled to 400 × 240.
+- How this fork differs from upstream OpenSWOS, and why: [3DS_DIVERGENCES.md](3DS_DIVERGENCES.md).
+- The picture is rendered 400 × 272 (the 3DS's own width) and scaled vertically to 400 × 240.
 - SDL does the sound, timer and threads; `src/n3ds.c` owns the screens and reads the
   buttons from HID into `InputSDL_TouchControls` (the web page's on-screen-controls hook).
 - `int32_t` is `long` on arm-none-eabi and `int` in the game's own Amiga-era typedefs;

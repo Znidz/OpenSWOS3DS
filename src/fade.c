@@ -55,6 +55,34 @@ static inline void fade_wait_one_isr_tick(void)
 extern volatile uint16_t _fadeState;
 extern volatile uint16_t _fadeCommand;
 extern volatile uint16_t _fadeInitFlag;
+void FadeOutTick(void);
+void FadeInTick(void);
+
+#ifdef __3DS__
+/* The 3DS cheats: a fade is five steps of the 50 Hz game clock, and that clock runs at about
+ * half speed there while the timer thread draws full 3D frames of a fade nobody sees. So the
+ * steps are run here, at once, and the fade is a cut. Every replay scene change has two of them.
+ * Returns 1 when the fade has ended; if not, the ordinary wait after it finishes the job. */
+static int fade_finish_now(int fadingIn)
+{
+    int guard;
+    for (guard = 0; guard < 16; guard++) {
+        if (fadingIn) {
+            if (_fadeState != 0) return 1;
+            FadeInTick();
+        } else {
+            if (_fadeState == 0) return 1;
+            FadeOutTick();
+        }
+    }
+    return fadingIn ? _fadeState != 0 : _fadeState == 0;
+}
+#define FADE_QUICK_IN()  ((void)fade_finish_now(1))   /* the loop after it ends at once when this finished */
+#define FADE_QUICK_OUT() ((void)fade_finish_now(0))
+#else
+#define FADE_QUICK_IN()  ((void)0)
+#define FADE_QUICK_OUT() ((void)0)
+#endif
 extern uint16_t _quitToDos;
 extern uint16_t _loaderModeFlag;
 extern uint16_t _paletteIndex;
@@ -74,6 +102,7 @@ void FadeOutToBlack(void)
 {
     if (_fadeInitFlag != FADE_SENTINEL)
     {
+        FADE_QUICK_IN();
         while (_fadeState == 0)
         {
             if (_quitToDos) return;
@@ -87,6 +116,7 @@ void FadeOutToBlack(void)
     if (_fadeCommand == FADE_SENTINEL)
         _fadeCommand = 0xFFFFu;
 
+    FADE_QUICK_OUT();
     while (_fadeState != 0)
     {
         if (_quitToDos) return;
@@ -106,6 +136,7 @@ void FadeIn(void)
 {
     if (_fadeCommand != FADE_SENTINEL)
     {
+        FADE_QUICK_OUT();
         while (_fadeState != 0)
         {
             if (_quitToDos) return;
@@ -120,6 +151,7 @@ void FadeIn(void)
     if (_fadeInitFlag == FADE_SENTINEL)
         _fadeInitFlag = 0xFFFFu;
 
+    FADE_QUICK_IN();
     while (_fadeState == 0)
     {
         if (_quitToDos) return;

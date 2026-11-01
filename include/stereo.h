@@ -76,6 +76,9 @@ typedef struct StereoConfig {
     int16_t rowStep;      /* ... each row this much further out than the one in front         */
     int16_t wallRows2;    /* the walls between the tiers: rows tall                           */
     int16_t wallRise2;    /* ... and how far out                                              */
+    int16_t hoardSlope;   /* a board's rise per pixel row up its face, in 1/80 px (24 = 2.4 in 1/8 px) */
+    int16_t shadowIdx;    /* the palette index a sprite's shadow is drawn in: flat on the pitch (0 = off) */
+    int16_t numberLift;   /* the player's number and marker float this far above the player's head   */
 } StereoConfig;
 
 extern int32_t       g_stereoOn;        /* depth is being recorded */

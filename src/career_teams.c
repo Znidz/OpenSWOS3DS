@@ -369,6 +369,22 @@ found_insert_point:
     }
 
 panic:
+    /* The panic stays; this only says what the cache looked like when it fired. */
+    {
+        uint8_t *q = _teamSelectionKeyCache;
+        int32_t n = (int32_t)_teamSelectionKeyCacheCount, i;
+        SWOS_AUTOSKIP_LOG("[keycache-panic] key=%u insertBytes=%u count=%d walkedTo=%ld size=%lu\n",
+                          (unsigned)key, (unsigned)insertionBytes, (int)n,
+                          (long)(ptr - _teamSelectionKeyCache), (unsigned long)sizeof(_teamSelectionKeyCache));
+        for (i = 0; i < n && i < 12 && (q - _teamSelectionKeyCache) < (long)sizeof(_teamSelectionKeyCache) - 10; i++) {
+            const TeamSelectionKeyCacheEntry *e = (const TeamSelectionKeyCacheEntry *)q;
+            SWOS_AUTOSKIP_LOG("[keycache-panic]  #%d at +%ld sortKey=%u stride=%u total=%u\n", (int)i,
+                              (long)(q - _teamSelectionKeyCache), (unsigned)e->sortKey,
+                              (unsigned)e->entryStride, (unsigned)e->totalElements);
+            if (e->entryStride < 10) break;
+            q += e->entryStride;
+        }
+    }
     _panicReasonCode = 0x8889;
     PanicHaltLoop();
     return ptr;  /* unreachable, satisfies compiler */

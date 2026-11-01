@@ -746,7 +746,7 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
         if (s_oldModel && !flatDone) {
             flatDone = 1;
             if (g_stereoCfg.pitchFar == -48 && g_stereoCfg.pitchNear == 0)
-                g_stereoCfg.pitchFar = g_stereoCfg.pitchNear = -16;
+                g_stereoCfg.pitchFar = g_stereoCfg.pitchNear = -64;
         }
     }
 

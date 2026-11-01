@@ -172,7 +172,7 @@ Each item is *problem → what we found → decision → alternatives*.
 - **Depth is in 1/8 px of disparity;** the left eye reads `x+shift`, the right `x−shift`, clamped at
   `limit` (96 = 12 px). The slider scales it; at zero 3D is off.
 - **The pitch is a plane tilted away from the viewer** (`pitchFar` −48 → `pitchNear` 0). **On the original
-  3DS the tilt is switched off** (flat at −16) unless `stereo.ini` sets other pitch depths: the tilt costs
+  3DS the tilt is switched off** (flat at −64, 8 px behind the screen) unless `stereo.ini` sets other pitch depths: the tilt costs
   a per-row shift, and it was half the per-row work.
 - **Players are one card at their feet plus a lean** (`heightGain`), not a depth growing row by row.
   Row-by-row growth *sheared* players (legs vs head in different planes) and, measured from the sprite's
@@ -350,7 +350,7 @@ toward the viewer.
 
 | key | default | meaning |
 |---|---|---|
-| `pitch_far`, `pitch_near` | −48, 0 (−16 both on an original 3DS) | the tilt |
+| `pitch_far`, `pitch_near` | −48, 0 (−64 both on an original 3DS) | the tilt |
 | `height_gain` | 16 | a player's lean (per row, /64 px); half of it is the base lean |
 | `hud`, `overlay` | 24, 16 | the HUD and untracked overlays |
 | `limit` | 96 | max disparity either way |

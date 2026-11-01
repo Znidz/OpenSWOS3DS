@@ -215,7 +215,7 @@ Each item is *problem → what we found → decision → alternatives*.
   `stands_start`, `wall1_rows/rise`, `people_rows`, `row_h`, `row_step`, `wall2_rows/rise` (defaults in
   section 6). The older smooth `tier_rise` is still used for the **side** stands. *Alternative:* the first
   version — a stepped height per 14-row tier — looked like terraces cut in the wrong places.
-- **The front wall starts at world row 74.** Starting earlier raised the grass strip *behind* the boards
+- **The front wall starts at world row 73 (was 74: the heads of the figures standing at the foot of the stands are on row 73, and at 74 they got the wall's depth, 5 units nearer than their own feet — 2026-11-01 marks).** Starting earlier raised the grass strip *behind* the boards
   (the row of grass between wall and board); at 74 it stays on the ground.
 - **Advertising boards are a wall standing on the pitch:** each row up its face is a little further out
   (`hoard_rise` = base, `hoard_slope` per row in tenths of 1/8 px). Defaults are the owner's marks:
@@ -358,7 +358,7 @@ toward the viewer.
 | `goal_slope` | 30 | a goal's gain per row up its posts (tenths of 1/8 px) |
 | `hoard_rise`, `hoard_slope` | 26, 24 | a board's base lift; gain per row up its face (tenths) |
 | `hoard_y0..y3` | 89, 103, 800, 812 | the boards' world rows (top end, bottom end) |
-| `stands_start` | 74 | the front wall's world row (top end; the bottom is mirrored) |
+| `stands_start` | 73 | the front wall's world row (top end; the bottom is mirrored) |
 | `wall1_rows/rise`, `people_rows`, `row_h`, `row_step`, `wall2_rows/rise` | 3/16, 4, 5, 4, 5/24 | the stands' staircase |
 | `shadow_idx` | 8 | palette index drawn flat on the pitch (0 = off) |
 | `number_lift` | 32 | number/marker height over the head |

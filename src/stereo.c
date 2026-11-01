@@ -63,7 +63,7 @@ StereoConfig g_stereoCfg = {
     103,    /* hoardY1: their bottom row                          */
     800,    /* hoardY2: the same at the bottom end                */
     812,    /* hoardY3                                            */
-     74,    /* standsStartY: the front wall's base (world row)    */
+     73,    /* standsStartY: the front wall's base (world row): 73, so the heads of the figures at 73 stand at their feet's depth */
       3,    /* wallRows1: the first wall is 3 rows tall           */
      16,    /* wallRise1: ... and 2 px out                        */
       4,    /* peopleRows: four rows of people in a tier          */

@@ -271,6 +271,18 @@ void AudioSDL_Shutdown(void)
 /* How often the device ran out of sound, and how often the queue was low, since the last
  * call (logged next to the frame rate: a rhythm in the sound shows here). */
 static volatile uint32_t s_underruns, s_lowqueue;
+/* More of the same, for "the music is slow / crackles" (3DS log, [audio] line): how many 20 ms ticks
+ * were mixed (250 in 5 s is real time -- fewer is a song that falls behind the clock), how many times a
+ * tick of silence was padded after one (a gap in the music), and the least the queue held. */
+static volatile uint32_t s_ticksMixed, s_silencePads, s_queueMin = 0xFFFFFFFFu;
+void AudioSDL_TakeStats2(uint32_t *ticks, uint32_t *pads, uint32_t *queueMinMs)
+{
+    const uint32_t freq = s_audio_spec.freq ? (uint32_t)s_audio_spec.freq : 1;
+    *ticks = s_ticksMixed; s_ticksMixed = 0;
+    *pads = s_silencePads; s_silencePads = 0;
+    *queueMinMs = s_queueMin == 0xFFFFFFFFu ? 0 : (uint32_t)((uint64_t)s_queueMin * 1000 / ((uint64_t)freq * 4));
+    s_queueMin = 0xFFFFFFFFu;
+}
 void AudioSDL_TakeStats(uint32_t *underruns, uint32_t *low)
 {
     *underruns = s_underruns; s_underruns = 0;
@@ -296,10 +308,12 @@ void AudioSDL_Tick(void)
      * both calling RJP1_HandleTick for the same tick (which would
      * double-step the song state). */
     Uint32 queued_bytes = SDL_GetQueuedAudioSize(s_audio_dev);
+    if (queued_bytes < s_queueMin) s_queueMin = queued_bytes;
     if (queued_bytes >= target_bytes) {
         SDL_UnlockMutex(s_mtx);
         return;
     }
+    s_ticksMixed++;
     if (queued_bytes == 0) s_underruns++;
     else if (queued_bytes < target_bytes / 4) s_lowqueue++;
 
@@ -444,6 +458,7 @@ void AudioSDL_Tick(void)
      * drains at real time so the song tempo stays correct. */
     queued_bytes = SDL_GetQueuedAudioSize(s_audio_dev);
     if (queued_bytes + out_bytes < target_bytes) {
+        s_silencePads++;
         SDL_memset(s_out_buf, 0, (size_t)out_bytes);
         SDL_QueueAudio(s_audio_dev, s_out_buf, out_bytes);
     }

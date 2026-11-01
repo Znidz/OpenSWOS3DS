@@ -782,6 +782,12 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
                       (unsigned)(s_tCompose * 10 / 268111 / calls / 10), (unsigned)(s_tCompose * 10 / 268111 / calls % 10));
               s_tBottom = s_tTop = s_tCompose = 0;
               fprintf(stderr, "[audio] %u underruns, %u low-queue refills in the last 5 s\n", (unsigned)un, (unsigned)lo);
+              { extern void AudioSDL_TakeStats2(uint32_t *, uint32_t *, uint32_t *);
+                uint32_t tk, pd, qm;
+                AudioSDL_TakeStats2(&tk, &pd, &qm);
+                /* 250 ticks in 5 s is the music at its real tempo; silence pads are gaps in it */
+                fprintf(stderr, "[audio] %u ticks mixed in %u ms (250 per 5000 = real tempo), %u silence pads, queue min %u ms\n",
+                        (unsigned)tk, (unsigned)(now - t0), (unsigned)pd, (unsigned)qm); }
               if (s_fpFrames) {
                   /* ms per frame, tenths: ticks / 268111 / frames */
                   #define FP10(t) ((unsigned)((uint64_t)(t) * 10 / 268111 / s_fpFrames))

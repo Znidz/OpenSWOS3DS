@@ -74,7 +74,7 @@ StereoConfig g_stereoCfg = {
      24,    /* hoardSlope: a board gains 2.4 per row up its face  */
       8,    /* shadowIdx: the shadow colour, flat on the pitch    */
      32,    /* numberLift: two whole-pixel steps above the head   */
-     30,    /* goalSlope: 3.0 a row: the bar ~2 player heights out */
+      0,    /* goalSlope: 0 -- a billboard is one flat card; a slope sheared the posts (tune it from the checker) */
 };
 
 /* Where sprites were drawn, per row: a few [x0,x1) intervals, merged as they come. Present
@@ -539,7 +539,7 @@ void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
         int32_t h = feet - y;                      /* rows above the feet */
         if (h < 0) h = 0;
         int32_t base = terrain_rise_y(feet + (int32_t)Render_CameraY());  /* up on the terraces */
-        if (s_isGoal)       /* a goal is a billboard: it stands on the grass at its line and its posts rise like a player's, to ~2 player heights at the bar */
+        if (s_isGoal)       /* a goal is a billboard: one upright card standing on the grass at its line, so one depth top to bottom (goal_slope 0); a slope makes the vertical posts lean */
             d = clamp_depth(ground_depth(feet) + base + g_stereoCfg.goalRise + (h * g_stereoCfg.goalSlope + 5) / 10);
         else                /* a player leans out: feet near the ground, the head ~2 px out */
             d = clamp_depth(ground_depth(feet) + base + g_stereoCfg.heightGain / 2 + h * g_stereoCfg.heightGain / 16);

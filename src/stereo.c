@@ -54,7 +54,7 @@ StereoConfig g_stereoCfg = {
      48,    /* menuSelected: the highlighted one, 6 px out        */
      48,    /* standsRise: the stands 6 px out                    */
      40,    /* standsMargin: pitch pixels past the touchlines     */
-      0,    /* goalRise: a goal's base ON the grass (it stands there like a billboard) */
+      8,    /* goalRise: the goal frame's base stands 1 px proud of the grass, as a player's feet do */
      14,    /* tierRows: a tier of seating is 14 pitch rows deep  */
       8,    /* tierStep: each tier 1 px further out than the last */
      40,    /* standsMax: the top tier 5 px beyond the first      */
@@ -74,7 +74,8 @@ StereoConfig g_stereoCfg = {
      24,    /* hoardSlope: a board gains 2.4 per row up its face  */
       8,    /* shadowIdx: the shadow colour, flat on the pitch    */
      32,    /* numberLift: two whole-pixel steps above the head   */
-     24,    /* goalHeight: the crossbar's height in rows: the front frame is one upright card up to it, the net's roof recedes behind */
+     24,    /* goalHeight: the crossbar's height in rows: the front frame leans out like a player up to it, the net's roof recedes behind */
+      2,    /* goalRoof: the net's roof goes this much (1/8 px) further in per row behind the crossbar */
 };
 
 /* Where sprites were drawn, per row: a few [x0,x1) intervals, merged as they come. Present
@@ -173,6 +174,7 @@ static void set_key(const char *k, int32_t v)
     else if (!strcmp(k, "hoard_slope"))   g_stereoCfg.hoardSlope   = (int16_t)v;
     else if (!strcmp(k, "shadow_idx"))    g_stereoCfg.shadowIdx    = (int16_t)v;
     else if (!strcmp(k, "number_lift"))   g_stereoCfg.numberLift   = (int16_t)v;
+    else if (!strcmp(k, "goal_roof"))     g_stereoCfg.goalRoof     = (int16_t)v;
     else if (!strcmp(k, "goal_height"))    g_stereoCfg.goalHeight   = (int16_t)v;
     else fprintf(stderr, "[stereo] stereo.ini: unknown key '%s'\n", k);
 }
@@ -193,7 +195,7 @@ static void write_cfg(FILE *f)
                "; the stands as built: front wall row, first wall rows and rise, rows of people per tier, their height and step, the walls between tiers\n"
                "stands_start = %d\nwall1_rows = %d\nwall1_rise = %d\npeople_rows = %d\nrow_h = %d\nrow_step = %d\nwall2_rows = %d\nwall2_rise = %d\n"
                "; boards: depth gained per row up the face (tenths); shadows: their palette index; the number: its lift above the head\n"
-               "hoard_slope = %d\nshadow_idx = %d\nnumber_lift = %d\ngoal_height = %d\n",
+               "hoard_slope = %d\nshadow_idx = %d\nnumber_lift = %d\ngoal_height = %d\ngoal_roof = %d\n",
             g_stereoCfg.pitchFar, g_stereoCfg.pitchNear, g_stereoCfg.heightGain,
             g_stereoCfg.hud, g_stereoCfg.overlay, g_stereoCfg.limit,
             g_stereoCfg.menuBack, g_stereoCfg.menuText, g_stereoCfg.menuButton,
@@ -203,7 +205,7 @@ static void write_cfg(FILE *f)
             g_stereoCfg.hoardY1, g_stereoCfg.hoardY2, g_stereoCfg.hoardY3,
             g_stereoCfg.standsStartY, g_stereoCfg.wallRows1, g_stereoCfg.wallRise1, g_stereoCfg.peopleRows,
             g_stereoCfg.rowH, g_stereoCfg.rowStep, g_stereoCfg.wallRows2, g_stereoCfg.wallRise2,
-            g_stereoCfg.hoardSlope, g_stereoCfg.shadowIdx, g_stereoCfg.numberLift, g_stereoCfg.goalHeight);
+            g_stereoCfg.hoardSlope, g_stereoCfg.shadowIdx, g_stereoCfg.numberLift, g_stereoCfg.goalHeight, g_stereoCfg.goalRoof);
 }
 
 static char s_cfgDir[512];
@@ -544,13 +546,16 @@ void Stereo_MarkRow(const uint8_t *fb, int32_t y, int32_t dstX,
              * goalHeight a pixel in row r is the ground point goalHeight rows further, so the
              * roof recedes (top goal: up the screen). The bottom goal's net hangs below its line,
              * lying on the grass nearer the viewer. */
-            int32_t line = s_groundRow;
-            if (s_isGoal == 1 && y < line - g_stereoCfg.goalHeight)
-                d = clamp_depth(ground_depth(y + g_stereoCfg.goalHeight) + base + g_stereoCfg.goalRise);
+            int32_t line = s_groundRow, gh = g_stereoCfg.goalHeight;
+            int32_t frame = ground_depth(line) + base + g_stereoCfg.goalRise;
+            if (s_isGoal == 1 && y < line - gh)         /* roof: from the crossbar's depth, further in per row */
+                d = clamp_depth(frame + gh * g_stereoCfg.heightGain / 16 - (line - gh - y) * g_stereoCfg.goalRoof);
             else if (s_isGoal == 2 && y > line)
                 d = clamp_depth(ground_depth(y) + base + g_stereoCfg.goalRise);
-            else
-                d = clamp_depth(ground_depth(line) + base + g_stereoCfg.goalRise);
+            else {                                      /* posts and crossbar lean out like a player */
+                int32_t up = line - y; if (up < 0) up = 0;
+                d = clamp_depth(frame + up * g_stereoCfg.heightGain / 16);
+            }
         }
         else                /* a player leans out: feet near the ground, the head ~2 px out */
             d = clamp_depth(ground_depth(feet) + base + g_stereoCfg.heightGain / 2 + h * g_stereoCfg.heightGain / 16);
@@ -997,6 +1002,7 @@ static const StereoParam k_params[] = {
     { "SHADOW COLOUR", &g_stereoCfg.shadowIdx,    1 },
     { "NUMBER LIFT",   &g_stereoCfg.numberLift,   4 },
     { "GOAL HEIGHT",   &g_stereoCfg.goalHeight,   2 },
+    { "GOAL ROOF",     &g_stereoCfg.goalRoof,     1 },
     { "HOARD TOP",     &g_stereoCfg.hoardY0,      1 },
     { "HOARD BOTTOM",  &g_stereoCfg.hoardY1,      1 },
     { "HOARD 2 TOP",   &g_stereoCfg.hoardY2,      1 },

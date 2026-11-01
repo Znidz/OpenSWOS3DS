@@ -80,6 +80,7 @@ typedef struct StereoConfig {
     int16_t shadowIdx;    /* the palette index a sprite's shadow is drawn in: flat on the pitch (0 = off) */
     int16_t numberLift;   /* the player's number and marker float this far above the player's head   */
     int16_t goalHeight;   /* a goal's crossbar height in rows: the frame is upright to it, the net roof recedes behind */
+    int16_t goalRoof;     /* the net's roof recedes this much (1/8 px) per row behind the crossbar */
 } StereoConfig;
 
 extern int32_t       g_stereoOn;        /* depth is being recorded */

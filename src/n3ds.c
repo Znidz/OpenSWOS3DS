@@ -1184,7 +1184,11 @@ int32_t N3DS_PollInput(void)
 
     /* Raw Amiga scancodes, as the pad's buttons send them (input_sdl.c k_padKeys). */
     if (down & KEY_START)  InputSDL_TouchKey(0x19);     /* P   pause                */
-    if ((down & KEY_SELECT) && (held & KEY_L))
+    if ((down & KEY_SELECT) && (held & KEY_L) && (held & KEY_R)) {
+        g_n3dsGpuLayers = (g_n3dsGpuLayers + 1) & 3;    /* L + R + SELECT: all / no HUD / pitch only / fg only */
+        fprintf(stderr, "[gpu] layers %d (0 all, 1 no HUD, 2 pitch plane only, 3 foreground only)\n", g_n3dsGpuLayers);
+    }
+    else if ((down & KEY_SELECT) && (held & KEY_L))
         s_dbgRequest = 1;                               /* L + SELECT: the 3D checker */
     else if ((down & KEY_SELECT) && (held & KEY_R)) {
         g_n3dsGpu = !g_n3dsGpu;                         /* R + SELECT: GPU drawing on / off */

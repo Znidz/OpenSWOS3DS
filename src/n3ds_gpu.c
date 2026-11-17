@@ -38,6 +38,7 @@
 #define HUD_W   256
 #define HUD_H   128
 
+int32_t g_n3dsGpuLayers;               /* 0 all, 1 no HUD, 2 pitch plane only, 3 foreground only */
 int32_t g_n3dsGpu = 1;                  /* R + SELECT in a match switches it off and on */
 
 static int32_t s_state;                 /* 0 not tried, 1 ready, -1 failed */
@@ -327,7 +328,7 @@ static void draw_eye(int32_t eye, int32_t w, int32_t h, const StereoGpuPlan *pl,
     C2D_TargetClear(s_tgt[eye < 0 ? 0 : 1], C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(s_tgt[eye < 0 ? 0 : 1]);
 
-    for (i = 0; i < pl->nSeg; i++) {                        /* the pitch plane */
+    for (i = 0; i < pl->nSeg && g_n3dsGpuLayers != 3; i++) {   /* the pitch plane */
         const StereoSeg *g = &pl->seg[i];
         const int32_t a = out_row(g->y0, h), b = out_row(g->y1, h);
         const float e = (float)(g->e * sgn);
@@ -335,7 +336,7 @@ static void draw_eye(int32_t eye, int32_t w, int32_t h, const StereoGpuPlan *pl,
         quad(bg, s_tw, s_th, (float)g->x0 * sx, (float)a, (float)(g->x1 - g->x0) * sx, (float)(b - a),
              (float)g->x0 - e, (float)a * sy, (float)g->x1 - e, (float)b * sy);
     }
-    for (i = 0; i < pl->nRun; i++) {                        /* what stands on it, furthest first */
+    for (i = 0; i < pl->nRun && g_n3dsGpuLayers != 2; i++) {   /* what stands on it, furthest first */
         const StereoRun *r = &pl->run[i];
         const int32_t a = out_row(r->y0, h), b = out_row(r->y1, h);
         const float e = (float)(r->e * sgn);
@@ -347,7 +348,7 @@ static void draw_eye(int32_t eye, int32_t w, int32_t h, const StereoGpuPlan *pl,
         const StereoHudRect *hr;
         const int32_t n = Stereo_HudRects(&hr);
         const int32_t shift = strength > 0 ? Stereo_EyeShiftFor(Stereo_HudDepth(), strength) : 0;
-        for (i = 0; i < n && i < s_hudCount; i++) {
+        for (i = 0; i < n && i < s_hudCount && g_n3dsGpuLayers == 0; i++) {
             const int32_t ax = hr[i].x * TOP_W / w, ay = hr[i].y * TOP_H / h;
             if (s_hudPos[i].x < 0) continue;
             quad(hud, HUD_W, HUD_H, (float)(ax + shift * sgn), (float)ay, (float)hr[i].w, (float)hr[i].h,

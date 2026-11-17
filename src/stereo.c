@@ -1125,9 +1125,6 @@ int32_t Stereo_GpuPlan(const uint8_t *fb, int32_t w, int32_t h, int32_t strength
                     d = dp[x];
                 } else {
                     d = clamp_depth(g_stereoCfg.overlay);
-                    /* an untracked pixel over the stands (the name label's tinted box) takes the
-                     * depth of what it covers, so its dither stays in step with the tiers under it */
-                    if (d < s_gZRow[x]) d = s_gZRow[x];
                 }
                 if (d < s_gZRow[x]) {                               /* behind what stands there */
                     if (runA >= 0) { gpu_run(y, runA, runB, runE); runA = -1; }

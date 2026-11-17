@@ -13,6 +13,7 @@
  * building the frame, how long the GPU takes, and the frame rate -- synced and not.
  *
  * Buttons:  A  3D shift on/off        Y  vsync on/off (off shows the headroom)
+ *           X  test view: 0 scene, 1 solid rectangles, 2 the textures themselves
  *           UP/DOWN  players 22/44/66  LEFT/RIGHT  pitch tiles 16 px / 32 px (4x fewer quads)
  *           START  quit
  * A line is appended to sdmc:/3ds/OpenSWOS3D/gputest.log every 5 seconds.
@@ -39,7 +40,7 @@
 
 /* Uploads a top-down RGBA image (0xRRGGBBAA) as a GPU texture: 8x8 tiles, Z-order inside a
  * tile, rows from the bottom up (what the PICA200 samples). */
-static bool tex_upload(C3D_Tex *t, int w, int h, const uint32_t *img)
+static bool tex_upload(C3D_Tex *t, int w, int h, const uint32_t *img, bool swapRB)
 {
     if (!C3D_TexInit(t, (u16)w, (u16)h, GPU_RGBA8))
         return false;
@@ -50,7 +51,9 @@ static bool tex_upload(C3D_Tex *t, int w, int h, const uint32_t *img)
             int tile = (ty >> 3) * (w >> 3) + (x >> 3);
             int z = (x & 1) | ((ty & 1) << 1) | ((x & 2) << 1) | ((ty & 2) << 2) |
                     ((x & 4) << 2) | ((ty & 4) << 3);
-            dst[tile * 64 + z] = img[y * w + x];
+            uint32_t px = img[y * w + x];
+            if (swapRB) px = ((px & 0xFF) << 24) | ((px & 0xFF00) << 8) | ((px >> 8) & 0xFF00) | (px >> 24);  /* AABBGGRR */
+            dst[tile * 64 + z] = px;
         }
     }
     C3D_TexFlush(t);
@@ -62,7 +65,9 @@ static bool tex_upload(C3D_Tex *t, int w, int h, const uint32_t *img)
 static uint32_t s_seed = 12345;
 static int rnd(int n) { s_seed = s_seed * 1103515245u + 12345u; return (int)((s_seed >> 16) % (uint32_t)n); }
 
-static C3D_Tex s_tileTex, s_spriteTex;
+static C3D_Tex s_tileTex, s_spriteTex, s_swapTex;
+static Tex3DS_SubTexture s_swapSub, s_atlasSub, s_spriteAllSub;
+static C2D_Image s_swapImg, s_atlasImg, s_spriteImg;
 static Tex3DS_SubTexture s_tileSub[8], s_stripSub[2][STRIPS], s_ballSub, s_shadowSub;
 static C2D_Image s_tile[8], s_strip[2][STRIPS], s_ball, s_shadow;
 
@@ -141,8 +146,11 @@ static bool make_textures(void)
             int dx = x * 2 - 15, dy = y * 2 - 5;
             if (dx * dx * 4 + dy * dy * 49 <= 900) sprites[(8 + y) * 64 + 32 + x] = RGBA(0, 0, 0, 120);
         }
-    if (!tex_upload(&s_tileTex, 64, 64, tiles) || !tex_upload(&s_spriteTex, 64, 64, sprites))
+    if (!tex_upload(&s_tileTex, 64, 64, tiles, false) || !tex_upload(&s_spriteTex, 64, 64, sprites, false) ||
+        !tex_upload(&s_swapTex, 64, 64, tiles, true))
         return false;
+    s_swapSub = make_sub(64, 64, 0, 0, 64, 64);
+    s_swapImg.tex = &s_swapTex; s_swapImg.subtex = &s_swapSub;
     for (int t = 0; t < 8; t++) {
         s_tileSub[t] = make_sub(64, 64, (t & 3) * 16, (t >> 2) * 16, 16, 16);
         s_tile[t].tex = &s_tileTex; s_tile[t].subtex = &s_tileSub[t];
@@ -152,6 +160,8 @@ static bool make_textures(void)
             s_stripSub[k][s] = make_sub(64, 64, k * 16, s * (PL_H / STRIPS), PL_W, PL_H / STRIPS);
             s_strip[k][s].tex = &s_spriteTex; s_strip[k][s].subtex = &s_stripSub[k][s];
         }
+    s_atlasSub = make_sub(64, 64, 0, 0, 64, 64);     s_atlasImg.tex = &s_tileTex;   s_atlasImg.subtex = &s_atlasSub;
+    s_spriteAllSub = make_sub(64, 64, 0, 0, 64, 64); s_spriteImg.tex = &s_spriteTex; s_spriteImg.subtex = &s_spriteAllSub;
     s_ballSub = make_sub(64, 64, 32, 0, 8, 8);   s_ball.tex = &s_spriteTex;   s_ball.subtex = &s_ballSub;
     s_shadowSub = make_sub(64, 64, 32, 8, 16, 6); s_shadow.tex = &s_spriteTex; s_shadow.subtex = &s_shadowSub;
     return true;
@@ -168,6 +178,7 @@ static int    s_tilePx   = 16;          /* 16 or 32: the pitch's quad size */
 static bool   s_shift    = true;
 static bool   s_vsync    = true;
 static int    s_quads;                  /* quads drawn this frame, both eyes */
+static int    s_mode;                   /* 0 scene, 1 solid rectangles, 2 the two textures */
 
 /* Depths are in pixels of disparity: negative is behind the screen. The pitch sits 8 px in. */
 #define PITCH_D   (-8.0f)
@@ -204,10 +215,37 @@ static inline float eye_shift(int eye, float depth, float k)    /* eye: -1 left,
     return s_shift ? -(float)eye * depth * k * 0.5f : 0.0f;
 }
 
+static void draw_border(int eye, float k)       /* magenta frame: proves the top screen shows anything */
+{
+    float sh = eye_shift(eye, -4.0f, k);
+    u32 m = C2D_Color32(255, 0, 255, 255);
+    C2D_DrawRectSolid(0.0f + sh, 0.0f, 0.0f, SCR_W, 4.0f, m);
+    C2D_DrawRectSolid(0.0f + sh, SCR_H - 4.0f, 0.0f, SCR_W, 4.0f, m);
+    C2D_DrawRectSolid(0.0f + sh, 0.0f, 0.0f, 4.0f, SCR_H, m);
+    C2D_DrawRectSolid(SCR_W - 4.0f + sh, 0.0f, 0.0f, 4.0f, SCR_H, m);
+}
+
 static void draw_scene(C3D_RenderTarget *target, int eye, float k)
 {
-    C2D_TargetClear(target, C2D_Color32(0, 0, 0, 255));
+    C2D_TargetClear(target, s_mode == 0 ? C2D_Color32(0, 0, 0, 255) : C2D_Color32(20, 20, 60, 255));
     C2D_SceneBegin(target);
+
+    if (s_mode == 1) {                          /* solid rectangles at three depths: no textures at all */
+        C2D_DrawRectSolid(40.0f + eye_shift(eye, -8.0f, k), 40.0f, 0.0f, 80, 60, C2D_Color32(220, 40, 40, 255));
+        C2D_DrawRectSolid(160.0f + eye_shift(eye, 0.0f, k), 40.0f, 0.0f, 80, 60, C2D_Color32(40, 200, 40, 255));
+        C2D_DrawRectSolid(280.0f + eye_shift(eye, 8.0f, k), 40.0f, 0.0f, 80, 60, C2D_Color32(60, 80, 240, 255));
+        draw_border(eye, k);
+        s_quads += 7;
+        return;
+    }
+    if (s_mode == 2) {                          /* the textures themselves, 3x: atlas, sprites, channel-swapped atlas */
+        C2D_DrawImageAt(s_atlasImg,  8.0f,   40.0f, 0.0f, NULL, 3.0f, 3.0f);
+        C2D_DrawImageAt(s_spriteImg, 208.0f, 40.0f, 0.0f, NULL, 3.0f, 3.0f);
+        C2D_DrawImageAt(s_swapImg,   8.0f,   -140.0f + 240.0f, 0.0f, NULL, 0.5f, 0.5f);
+        draw_border(eye, k);
+        s_quads += 7;
+        return;
+    }
 
     const int tp = s_tilePx;
     const float sc = (float)tp / 16.0f;
@@ -248,6 +286,8 @@ static void draw_scene(C3D_RenderTarget *target, int eye, float k)
         C2D_DrawImageAt(s_ball, s_ballX - 4.0f + eye_shift(eye, d, k), s_ballY - 8.0f - s_ballZ, 0.0f, NULL, 1.0f, 1.0f);
         s_quads++;
     }
+    draw_border(eye, k);
+    s_quads += 4;
 }
 
 /* ---- main -------------------------------------------------------------------- */
@@ -258,13 +298,15 @@ int main(void)
 {
     gfxInitDefault();
     gfxSet3D(true);
-    C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
-    C2D_Init(8192);
+    bool c3dOk = C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
+    bool c2dOk = C2D_Init(8192);
     C2D_Prepare();
     consoleInit(GFX_BOTTOM, NULL);
 
     C3D_RenderTarget *left  = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
     C3D_RenderTarget *right = C2D_CreateScreenTarget(GFX_TOP, GFX_RIGHT);
+    printf("C3D_Init %d  C2D_Init %d  targets %d %d\n", c3dOk, c2dOk, left != NULL, right != NULL);
+    int beginOk = 0, beginTotal = 0;
 
     if (!make_textures()) {
         printf("Could not create the textures.\nPress START.\n");
@@ -284,6 +326,7 @@ int main(void)
         if (kd & KEY_START) break;
         if (kd & KEY_A) s_shift = !s_shift;
         if (kd & KEY_Y) s_vsync = !s_vsync;
+        if (kd & KEY_X) s_mode = (s_mode + 1) % 3;
         if (kd & KEY_UP)    s_nPlayers = s_nPlayers < MAX_PL ? s_nPlayers + 22 : MAX_PL;
         if (kd & KEY_DOWN)  s_nPlayers = s_nPlayers > 22 ? s_nPlayers - 22 : 22;
         if (kd & (KEY_LEFT | KEY_RIGHT)) s_tilePx = s_tilePx == 16 ? 32 : 16;
@@ -295,7 +338,8 @@ int main(void)
 
         s_quads = 0;
         double tb = now_ms();
-        C3D_FrameBegin(s_vsync ? C3D_FRAME_SYNCDRAW : 0);
+        bool began = C3D_FrameBegin(s_vsync ? C3D_FRAME_SYNCDRAW : 0);
+        beginTotal++; if (began) beginOk++;
         double ta = now_ms();
         draw_scene(left, -1, k);
         if (k > 0.0f) draw_scene(right, +1, k);
@@ -325,6 +369,8 @@ int main(void)
             printf("GPU          %.2f ms\n", C3D_GetProcessingTime());
             printf("GPU drawing  %.2f ms\n", C3D_GetDrawingTime());
             printf("cmd buffer   %.0f %%\n\n", C3D_GetCmdBufUsage() * 100.0f);
+            printf("test view   %d   (X: 0 scene, 1 rects, 2 textures)\n", s_mode);
+            printf("FrameBegin  %d/%d ok\n", beginOk, beginTotal);
             printf("START quits\n");
             if (++logWin >= 5) {
                 logWin = 0;
@@ -342,6 +388,7 @@ int main(void)
 
     C3D_TexDelete(&s_tileTex);
     C3D_TexDelete(&s_spriteTex);
+    C3D_TexDelete(&s_swapTex);
     C2D_Fini();
     C3D_Fini();
     gfxExit();

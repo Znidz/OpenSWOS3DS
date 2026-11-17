@@ -32,6 +32,7 @@ Nothing in it is read from the game. The CPU only builds quad lists.
 | Y | vsync on/off (off shows the headroom over 60 frames a second) |
 | UP / DOWN | 22 / 44 / 66 players |
 | LEFT / RIGHT | pitch quads 16 px or 32 px (4x fewer quads) |
+| X | test view: 0 the scene, 1 three solid rectangles at three depths, 2 the textures themselves (the tile atlas, the sprites, and the atlas with red and blue swapped). Every view has a magenta frame, so a black top screen can be told from a scene that did not draw |
 | START | quit |
 
 ## Reading the result
@@ -45,6 +46,14 @@ renderer like this would cost per tick. The game's logic and drawing into the bu
 about 10 ms of the 20 a tick allows, so a frame here under about **8 ms** makes 50 ticks a
 second plausible; over 14 ms does not. Send the log with the slider at the top and again at
 zero.
+
+## If the top screen is black
+
+First run (gputest-3, 2026-11-17): the timings were fine and the top screen was black, so nothing
+shown to the eye. Press X: the magenta frame says whether the top screen shows anything; the solid
+rectangles say whether drawing works without textures; the texture view says whether the textures
+upload correctly (and, in its third picture, whether the colour order is wrong). The bottom screen
+also lists the init results and how often `C3D_FrameBegin` succeeded.
 
 ## What it does not prove
 

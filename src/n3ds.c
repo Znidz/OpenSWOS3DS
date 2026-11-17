@@ -60,7 +60,7 @@ u32 __stacksize__ = 1024 * 1024;
 
 static int32_t  s_videoUp;
 static int32_t  s_3dOn = -1;
-static int32_t  s_oldModel, s_presentTick, s_gpuShown, s_bottomPaused;
+static int32_t  s_oldModel, s_presentTick, s_gpuShown;
 static uint16_t s_pal565[256];
 typedef uint32_t __attribute__((may_alias)) u32alias;   /* two 565 pixels at a time */
 static uint16_t s_xmap[TOP_W], s_xlast[TOP_W];
@@ -824,16 +824,8 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
         else
             N3DSScr_BottomMenu(fb, w, s_pal565, main_menu_showing());
     }
-    else if (kind == STEREO_FRAME_MATCH) {
-        extern volatile uint16_t _paused;
-        static int32_t wasPaused;
-        N3DSCrtMenu_Sync();
-        if (_paused && !wasPaused) N3DSCrtMenu_Enter();
-        if (!_paused && wasPaused) N3DSCrtMenu_Leave();
-        wasPaused = _paused != 0;
-        if (_paused) { N3DSCrtMenu_Draw(); s_bottomPaused = 1; }
-        else { N3DSScr_BottomMatch(s_pal565); s_bottomPaused = 0; }
-    }
+    else if (kind == STEREO_FRAME_MATCH)
+        N3DSScr_BottomMatch(s_pal565);
     else
         N3DSScr_BottomInfo();
 
@@ -1149,12 +1141,6 @@ int32_t N3DS_PollInput(void)
 
     /* A tap on the menu (bottom screen): the SEASON button and its list first, else
      * the menu's, taken by MenuProc (MenuTapAt). */
-    if (s_bottomPaused && N3DSScr_BottomMode() == N3DS_BOTTOM_MATCH) {
-        touchPosition tp;
-        tp.px = tp.py = 0;
-        if (held & KEY_TOUCH) hidTouchRead(&tp);
-        N3DSCrtMenu_Input(held, down, tp.px, tp.py);         /* the pause screen's filter controls */
-    }
     if ((down & KEY_TOUCH) && N3DSScr_BottomMode() == N3DS_BOTTOM_MENU) {
         touchPosition tp;
         int32_t r;

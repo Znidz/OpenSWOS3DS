@@ -309,12 +309,13 @@ static inline void quad(C3D_Tex *tex, int32_t tw, int32_t th, float x, float y, 
     C2D_DrawParams p;
     sub.width = (u16)(qw > 0 ? qw : 1);
     sub.height = (u16)(qh > 0 ? qh : 1);
-    /* (stereo3d-71 looked 180 degrees turned in a video, but the phone filming it was upside
-     * down: these are the right corners. Do not swap them.) */
-    sub.left = u0 / (float)tw;
-    sub.right = u1 / (float)tw;
-    sub.top = 1.0f - v0 / (float)th;
-    sub.bottom = 1.0f - v1 / (float)th;
+    /* Checked on hardware (stereo3d-71): with the obvious coordinates the content of every
+     * rectangle came out turned 180 degrees (the score panel upside down and mirrored, the
+     * statistics list in reverse order). So the corners are swapped. */
+    sub.left = u1 / (float)tw;
+    sub.right = u0 / (float)tw;
+    sub.top = 1.0f - v1 / (float)th;
+    sub.bottom = 1.0f - v0 / (float)th;
     im.tex = tex;
     im.subtex = &sub;
     p.pos.x = x; p.pos.y = y; p.pos.w = qw; p.pos.h = qh;

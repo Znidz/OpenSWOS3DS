@@ -55,6 +55,10 @@ rectangles say whether drawing works without textures; the texture view says whe
 upload correctly (and, in its third picture, whether the colour order is wrong). The bottom screen
 also lists the init results and how often `C3D_FrameBegin` succeeded.
 
+Result (gputest-4): the magenta frame and the solid rectangles drew, and were 3D; the textures drew
+with the right colours but upside down (players with legs on top), so the scene's tile and sprite
+quads read the empty half of each texture and showed nothing. The upload now stores the top row first.
+
 ## What it does not prove
 
 - Converting the game's 8-bit pitch tiles and sprites into textures (once per match, once per

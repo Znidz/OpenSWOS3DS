@@ -39,14 +39,14 @@
 /* ---- textures ---------------------------------------------------------------- */
 
 /* Uploads a top-down RGBA image (0xRRGGBBAA) as a GPU texture: 8x8 tiles, Z-order inside a
- * tile, rows from the bottom up (what the PICA200 samples). */
+ * tile, rows top first (as citro2d's sub-texture coordinates expect). */
 static bool tex_upload(C3D_Tex *t, int w, int h, const uint32_t *img, bool swapRB)
 {
     if (!C3D_TexInit(t, (u16)w, (u16)h, GPU_RGBA8))
         return false;
     uint32_t *dst = (uint32_t *)t->data;
     for (int y = 0; y < h; y++) {
-        int ty = h - 1 - y;
+        int ty = y;      /* first memory row is the picture's TOP row (checked on hardware, gputest-4: bottom-first came out upside down) */
         for (int x = 0; x < w; x++) {
             int tile = (ty >> 3) * (w >> 3) + (x >> 3);
             int z = (x & 1) | ((ty & 1) << 1) | ((x & 2) << 1) | ((ty & 2) << 2) |

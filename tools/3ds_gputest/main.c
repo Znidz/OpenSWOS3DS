@@ -20,6 +20,7 @@
 #include <3ds.h>
 #include <citro2d.h>
 #include <stdint.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

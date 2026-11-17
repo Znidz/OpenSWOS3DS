@@ -91,29 +91,10 @@ static void mask_rgb(int x, int y, int dim, CrtMaskKind kind,
     }
 }
 
-/* Build the combined texture at the current output size. */
-static SDL_Texture *build(SDL_Renderer *renderer, int w, int h)
+/* The combined mask, as w*h ARGB pixels (row pitch in bytes). Pure: no SDL, so the 3DS builds the
+ * same overlay for its own texture. */
+void CrtEffects_Fill(const CrtEffectsConfig *cfg, int w, int h, uint32_t *px, int pitch)
 {
-    if (w <= 0 || h <= 0) return NULL;
-
-    SDL_Texture *t = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
-                                       SDL_TEXTUREACCESS_STREAMING, w, h);
-    if (!t) {
-        fprintf(stderr, "[crt] %dx%d overlay texture failed (%s) — effects off\n",
-                w, h, SDL_GetError());
-        s_failed = 1;
-        return NULL;
-    }
-    SDL_SetTextureBlendMode(t, SDL_BLENDMODE_MOD);
-
-    uint32_t *px = NULL;
-    int pitch = 0;
-    if (SDL_LockTexture(t, NULL, (void **)&px, &pitch) != 0) {
-        SDL_DestroyTexture(t);
-        s_failed = 1;
-        return NULL;
-    }
-
     /* Vignette geometry: measured from the centre, in units of the half-
      * diagonal, so it looks the same at any resolution or aspect. Nothing
      * dims inside `inner`; beyond it the falloff is squared so there is no
@@ -124,24 +105,24 @@ static SDL_Texture *build(SDL_Renderer *renderer, int w, int h)
     const double inner  = dia * 0.30;
     const double outer  = dia * 1.00;
     const double span   = (outer - inner) * (outer - inner);
-    const double vstr   = s_cfg.vignette / 100.0;
+    const double vstr   = cfg->vignette / 100.0;
 
     /* Rounded-glass corner: a rounded-rect distance field. `edge` is the soft
      * band that fades to black so the corner is not a hard cut. */
-    const double radius = (s_cfg.corners / 100.0) * (dia * 0.18);
+    const double radius = (cfg->corners / 100.0) * (dia * 0.18);
     const double edge   = dia * 0.010;
 
-    const int dim = 255 - (s_cfg.mask_strength * 255) / 100;
+    const int dim = 255 - (cfg->mask_strength * 255) / 100;
 
     for (int y = 0; y < h; y++) {
         uint32_t *row = (uint32_t *)((uint8_t *)px + (size_t)y * pitch);
         for (int x = 0; x < w; x++) {
             uint8_t r, g, b;
-            mask_rgb(x, y, dim, s_cfg.mask, &r, &g, &b);
+            mask_rgb(x, y, dim, cfg->mask, &r, &g, &b);
 
             double shade = 1.0;
 
-            if (s_cfg.vignette > 0) {
+            if (cfg->vignette > 0) {
                 double dx = midx - (x + 0.5), dy = midy - (y + 0.5);
                 double d2 = dx * dx + dy * dy;
                 if (d2 > inner * inner) {
@@ -174,6 +155,32 @@ static SDL_Texture *build(SDL_Renderer *renderer, int w, int h)
             row[x] = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
         }
     }
+}
+
+/* Build the combined texture at the current output size. */
+static SDL_Texture *build(SDL_Renderer *renderer, int w, int h)
+{
+    if (w <= 0 || h <= 0) return NULL;
+
+    SDL_Texture *t = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                       SDL_TEXTUREACCESS_STREAMING, w, h);
+    if (!t) {
+        fprintf(stderr, "[crt] %dx%d overlay texture failed (%s) — effects off\n",
+                w, h, SDL_GetError());
+        s_failed = 1;
+        return NULL;
+    }
+    SDL_SetTextureBlendMode(t, SDL_BLENDMODE_MOD);
+
+    uint32_t *px = NULL;
+    int pitch = 0;
+    if (SDL_LockTexture(t, NULL, (void **)&px, &pitch) != 0) {
+        SDL_DestroyTexture(t);
+        s_failed = 1;
+        return NULL;
+    }
+
+    CrtEffects_Fill(&s_cfg, w, h, px, pitch);
     SDL_UnlockTexture(t);
     return t;
 }

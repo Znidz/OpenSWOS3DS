@@ -112,7 +112,7 @@ DEPS    := $(OBJECTS:.o=.d)
 
 LDFLAGS := -specs=3dsx.specs -g $(ARCH) -Wl,--wrap=mkdir -Wl,-Map,$(OBJDIR)/$(TARGET).map -Wl,--gc-sections \
            -L$(PORTLIBS)/lib -L$(CTRULIB)/lib
-LDLIBS  := $(SDL_LIBS) -lctru -lm
+LDLIBS  := $(SDL_LIBS) -lcitro2d -lcitro3d -lctru -lm
 
 vpath %.c $(SD_DIRS)
 

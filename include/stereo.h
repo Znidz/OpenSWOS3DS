@@ -129,6 +129,26 @@ void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t stre
                            uint8_t *outL, uint8_t *outR);
 
 
+/* ---- the GPU's plan for a match frame (3DS, src/n3ds_gpu.c) -----------------------------
+ * The same picture ComposeRowPair builds, described as rectangles instead of pixels, so the
+ * GPU can draw each eye from textures: the pitch plane (seg), then what stands on it (run).
+ * Rows are source rows. A seg shows the pitch plane's [x0,x1) x [y0,y1) at the same place in
+ * both eyes but its picture moved by e pixels (left eye: shown from x - e, right: from x + e).
+ * A run is a piece of the frame's own picture, moved: left eye +e, right eye -e. Runs come
+ * furthest first (smallest e), so the nearest draws last, as the pixel-by-pixel compose does.
+ * Nothing here is match state. */
+typedef struct StereoSeg { int16_t x0, x1, y0, y1, e; } StereoSeg;
+typedef struct StereoRun { int16_t x0, x1, y0, y1, e; } StereoRun;
+typedef struct StereoGpuPlan {
+    const uint8_t *bg, *stamp, *hudMask, *rowHud;   /* the planes, w bytes a row */
+    const int8_t  *dep;
+    const StereoSeg *seg; int32_t nSeg;
+    const StereoRun *run; int32_t nRun;
+    int32_t runsDropped;
+} StereoGpuPlan;
+/* 1 when `fb` is a match frame and the plan is made; 0 otherwise (draw it the old way). */
+int32_t Stereo_GpuPlan(const uint8_t *fb, int32_t w, int32_t h, int32_t strength, StereoGpuPlan *p);
+
 /* ---- the 3DS checker's hooks ---- */
 enum { STEREO_PROBE_PITCH, STEREO_PROBE_STANDS, STEREO_PROBE_HOARDING, STEREO_PROBE_SPRITE,
        STEREO_PROBE_HUD, STEREO_PROBE_OVERLAY };

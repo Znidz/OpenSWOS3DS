@@ -40,6 +40,11 @@ void    N3DSScr_BottomInfo(void);
 int32_t N3DSScr_BottomMode(void);
 void    N3DSScr_TouchToMenu(int32_t tx, int32_t ty, int32_t *mx, int32_t *my);
 
+/* src/n3ds_gpu.c: the match's top screen drawn by the GPU (docs/3DS_GPU.md) */
+extern int32_t g_n3dsGpu;                        /* on: draw matches that way (R + SELECT in a match) */
+int32_t N3DSGpu_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba, int32_t strength);
+void    N3DSGpu_Shutdown(void);
+
 /* src/n3ds_debug.c: the 3D checker and the tuning page (L + SELECT in a match) */
 void    N3DSDbg_Open(void);
 int32_t N3DSDbg_Active(void);

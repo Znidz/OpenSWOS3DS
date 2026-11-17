@@ -138,6 +138,7 @@ docs drift: search by function name.
 | [3DS.md](3DS.md) | The Nintendo 3DS stereoscopic fork (`Znidz/OpenSWOS3DS`): installing, screens, seasons, how the 3D works. | current | `Makefile.3ds`, `src/n3ds*.c`, `src/stereo.c` |
 | [3DS_DIVERGENCES.md](3DS_DIVERGENCES.md) | Every way the 3DS fork differs from upstream OpenSWOS, with the reasoning, rejected ideas, settings, log lines and open items. | current — marks what is unverified on hardware | `Makefile.3ds`, `src/stereo.c`, the 19 touched shared files |
 | [3DS_GPU_TEST.md](3DS_GPU_TEST.md) | The stand-alone GPU stereo test: textured quads per eye on an original 3DS, to learn whether a GPU renderer could reach 50 ticks a second before the game is rewritten. | current (a test, not the game) | `tools/3ds_gputest/`, `.github/workflows/build-3ds-gputest.yml` |
+| [3DS_GPU.md](3DS_GPU.md) | The match's top screen drawn by the GPU: how the depth plan becomes textured rectangles per eye, the fallbacks, what to check on hardware. | current (first build, unverified on hardware) | `src/n3ds_gpu.c`, `Stereo_GpuPlan` in `src/stereo.c` |
 | [SWITCH.md](SWITCH.md) | Building, packaging and debugging the Switch flavour; the filesystem/logging differences. No SDK content (NDA). | current — but it says "builds, links and packages" where CLAUDE.md says "not yet linked or run": the owner knows which | `Makefile.switch`, `scripts/build_switch.*` |
 
 ## The Amiga target (AGA resumed 2026-10-10: a whole match plays)

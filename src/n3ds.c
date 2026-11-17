@@ -60,7 +60,7 @@ u32 __stacksize__ = 1024 * 1024;
 
 static int32_t  s_videoUp;
 static int32_t  s_3dOn = -1;
-static int32_t  s_oldModel, s_presentTick;
+static int32_t  s_oldModel, s_presentTick, s_gpuShown;
 static uint16_t s_pal565[256];
 typedef uint32_t __attribute__((may_alias)) u32alias;   /* two 565 pixels at a time */
 static uint16_t s_xmap[TOP_W], s_xlast[TOP_W];
@@ -137,6 +137,7 @@ void N3DS_QuitWatchdog(void)
 void N3DS_Exit(void)
 {
     if (!s_videoUp) return;
+    N3DSGpu_Shutdown();
     gfxExit();          /* romfs is left to the C runtime's own teardown (SDL's main may own it) */
     s_videoUp = 0;
 }
@@ -767,11 +768,12 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
             uint32_t gameTicks = (uint16_t)(_currentGameTick - lastGameTick);   /* 50 a second is real time */
             lastGameTick = _currentGameTick;
             fprintf(stderr, "[fps] game clock %u.%u ticks/s (50 = real time); "
-                            "%d.%d shown/s (%s, %s) present %u.%u ms/call, %u calls\n",
+                            "%d.%d shown/s (%s, %s, %s) present %u.%u ms/call, %u calls\n",
                     (unsigned)(gameTicks * 1000 / (uint32_t)(now - t0)),
                     (unsigned)(gameTicks * 10000 / (uint32_t)(now - t0) % 10),
                     (int)(shown * 1000 / (now - t0)), (int)(shown * 10000 / (now - t0) % 10),
                     kind == STEREO_FRAME_MATCH ? "match" : "menu", s_oldModel ? "old 3DS" : "new 3DS",
+                    g_n3dsGpu ? "gpu" : "cpu",
                     (unsigned)(tenthsMs / 10), (unsigned)(tenthsMs % 10), (unsigned)s_presentCalls);
             { extern void AudioSDL_TakeStats(uint32_t *, uint32_t *);
               uint32_t un, lo;
@@ -840,6 +842,21 @@ static void present_impl(const uint8_t *fb, int32_t w, int32_t h, const uint8_t 
         gfxSwapBuffers();
         return;
     }
+
+    /* The match's top screen drawn by the GPU: the same depth model, a few thousand textured
+     * rectangles instead of 192,000 pixels written by the CPU (n3ds_gpu.c). A frame it cannot
+     * draw (memory, a plan that does not fit) falls through to the pixel path below. */
+    if (kind == STEREO_FRAME_MATCH && !s_dbgRunning && g_n3dsGpu) {
+        const uint64_t tg = svcGetSystemTick();
+        if (N3DSGpu_Present(fb, w, h, rgba, strength)) {
+            s_tTop += svcGetSystemTick() - tg;
+            s_gpuShown = 1;
+            gfxFlushBuffers();                      /* the bottom screen's pixels */
+            gfxScreenSwapBuffers(GFX_BOTTOM, false);    /* the top is swapped when the GPU finishes it */
+            return;
+        }
+    }
+    s_gpuShown = 0;
 
     /* The framebuffer is the screen turned on its side: column x is 240 pixels, bottom to
      * top, so a row at a time touches a new cache line per pixel. Take 8 rows, then write
@@ -1155,6 +1172,10 @@ int32_t N3DS_PollInput(void)
     if (down & KEY_START)  InputSDL_TouchKey(0x19);     /* P   pause                */
     if ((down & KEY_SELECT) && (held & KEY_L))
         s_dbgRequest = 1;                               /* L + SELECT: the 3D checker */
+    else if ((down & KEY_SELECT) && (held & KEY_R)) {
+        g_n3dsGpu = !g_n3dsGpu;                         /* R + SELECT: GPU drawing on / off */
+        fprintf(stderr, "[gpu] %s by R + SELECT\n", g_n3dsGpu ? "switched on" : "switched off");
+    }
     else if (down & KEY_SELECT)
         InputSDL_TouchKey(0x21);                        /* S   statistics           */
     if (down & KEY_Y)      InputSDL_TouchKey(0x13);     /* R   instant replay       */

@@ -970,6 +970,199 @@ void Stereo_ComposeRowPair(const uint8_t *fb, int32_t w, int32_t y, int32_t stre
 #undef PAIR_PX
 }
 
+
+/* ---- the GPU's plan (stereo.h) ---------------------------------------------------------- */
+
+#define GPU_MAX_SEGS 8192
+#define GPU_MAX_RUNS 8192
+#define GPU_E_RANGE  16          /* a run's shift is within +-16 px (the depth limit makes it 8) */
+#define GPU_ROW_LIST 96
+
+static StereoSeg s_gSeg[GPU_MAX_SEGS];
+static StereoRun s_gRun[GPU_MAX_RUNS], s_gRunSorted[GPU_MAX_RUNS];
+static int32_t   s_gNSeg, s_gNRun, s_gSegDropped, s_gRunDropped;
+static int32_t   s_gPrevSeg[GPU_ROW_LIST], s_gCurSeg[GPU_ROW_LIST], s_gPrevSegN, s_gCurSegN;
+static int32_t   s_gPrevRun[GPU_ROW_LIST], s_gCurRun[GPU_ROW_LIST], s_gPrevRunN, s_gCurRunN;
+static int8_t    s_gZRow[FRONTBUFFER_MAX_STRIDE_BYTES];
+static int32_t   s_gStrength;
+
+/* One piece of the pitch plane's row y, [a,b), standing at depth sd. */
+static void gpu_seg(int32_t y, int32_t a, int32_t b, int32_t sd)
+{
+    int32_t e = eye_shift(sd, s_gStrength), i;
+    if (b <= a) return;
+    if (sd > 127) sd = 127;
+    if (sd < -128) sd = -128;
+    memset(s_gZRow + a, (int8_t)sd, (size_t)(b - a));
+    for (i = 0; i < s_gPrevSegN; i++) {             /* the same piece on the row above: one taller */
+        StereoSeg *q = &s_gSeg[s_gPrevSeg[i]];
+        if (q->x0 == a && q->x1 == b && q->e == e && q->y1 == y) {
+            q->y1 = (int16_t)(y + 1);
+            if (s_gCurSegN < GPU_ROW_LIST) s_gCurSeg[s_gCurSegN++] = s_gPrevSeg[i];
+            return;
+        }
+    }
+    if (s_gNSeg >= GPU_MAX_SEGS) { s_gSegDropped = 1; return; }
+    s_gSeg[s_gNSeg].x0 = (int16_t)a; s_gSeg[s_gNSeg].x1 = (int16_t)b;
+    s_gSeg[s_gNSeg].y0 = (int16_t)y; s_gSeg[s_gNSeg].y1 = (int16_t)(y + 1);
+    s_gSeg[s_gNSeg].e = (int16_t)e;
+    if (s_gCurSegN < GPU_ROW_LIST) s_gCurSeg[s_gCurSegN++] = s_gNSeg;
+    s_gNSeg++;
+}
+
+static void gpu_run(int32_t y, int32_t a, int32_t b, int32_t e)
+{
+    int32_t i;
+    if (b <= a) return;
+    for (i = 0; i < s_gPrevRunN; i++) {
+        StereoRun *q = &s_gRun[s_gPrevRun[i]];
+        if (q->x0 == a && q->x1 == b && q->e == e && q->y1 == y) {
+            q->y1 = (int16_t)(y + 1);
+            if (s_gCurRunN < GPU_ROW_LIST) s_gCurRun[s_gCurRunN++] = s_gPrevRun[i];
+            return;
+        }
+    }
+    if (s_gNRun >= GPU_MAX_RUNS) { s_gRunDropped++; return; }
+    s_gRun[s_gNRun].x0 = (int16_t)a; s_gRun[s_gNRun].x1 = (int16_t)b;
+    s_gRun[s_gNRun].y0 = (int16_t)y; s_gRun[s_gNRun].y1 = (int16_t)(y + 1);
+    s_gRun[s_gNRun].e = (int16_t)e;
+    if (s_gCurRunN < GPU_ROW_LIST) s_gCurRun[s_gCurRunN++] = s_gNRun;
+    s_gNRun++;
+}
+
+/* The pitch plane's row y as pieces: the pitch, the stands round it, the boards -- the
+ * same rules ComposeRowPair applies to the row, written as spans. */
+static void gpu_row_pieces(int32_t y, int32_t w, int32_t pd)
+{
+    const int32_t wy = y + (int32_t)Render_CameraY();
+    const int32_t hr = hoard_rise_wy(wy, NULL);
+    if (hr >= 0) {                                   /* a board: its whole row stands out */
+        gpu_seg(y, 0, w, clamp_depth(pd + hr));
+        return;
+    }
+    if (g_stereoCfg.standsRise != 0) {
+        const int32_t m = g_stereoCfg.standsMargin;
+        const int32_t left = (STEREO_FIELD_X0 - m) - (int32_t)Render_CameraX();
+        const int32_t right = (STEREO_FIELD_X1 + m) - (int32_t)Render_CameraX();
+        const int32_t rowRise = terrain_rise_y(wy);
+        int32_t seg[2][2] = { { 0, 0 }, { 0, 0 } }, k, midA = 0, midB = w;
+        if (wy < g_stereoCfg.standsStartY || wy > stands_start_bottom()) {
+            seg[0][1] = w;
+        } else {
+            if (left > 0)  seg[0][1] = left > w ? w : left;
+            if (right < w) { seg[1][0] = right < 0 ? 0 : right; seg[1][1] = w; }
+        }
+        if (seg[0][1] > 0) midA = seg[0][1];
+        if (seg[1][1] > seg[1][0]) midB = seg[1][0];
+        for (k = 0; k < 2; k++) {
+            int32_t a = seg[k][0], b = seg[k][1], x;
+            if (b <= a) continue;
+            for (x = a; x < b; ) {
+                int32_t rise = rowRise, xe = b;
+                if (rise == 0) {
+                    const int32_t rows = g_stereoCfg.tierRows > 0 ? g_stereoCfg.tierRows : 1;
+                    const int32_t out = k == 0 ? (STEREO_FIELD_X0 - m) - ((int32_t)Render_CameraX() + x)
+                                               : ((int32_t)Render_CameraX() + x) - (STEREO_FIELD_X1 + m);
+                    rise = tier_rise(out);
+                    if (out >= 0) {
+                        const int32_t same = k == 0 ? out % rows + 1 : rows - out % rows;
+                        if (x + same < xe) xe = x + same;
+                    }
+                }
+                gpu_seg(y, x, xe, clamp_depth(pd + rise));
+                x = xe;
+            }
+        }
+        gpu_seg(y, midA, midB, pd);
+        return;
+    }
+    gpu_seg(y, 0, w, pd);
+}
+
+int32_t Stereo_GpuPlan(const uint8_t *fb, int32_t w, int32_t h, int32_t strength, StereoGpuPlan *pl)
+{
+    static int8_t  lut[256];
+    static int32_t lutFor = -1;
+    static uint8_t plain[FRONTBUFFER_MAX_STRIDE_BYTES];
+    StereoSlot *s = slot_for(fb, 0);
+    int32_t y, i, count[2 * GPU_E_RANGE + 2];
+
+    if (!s || s_kind != KIND_MATCH || w > FRONTBUFFER_MAX_STRIDE_BYTES || h > SCREEN_HEIGHT)
+        return 0;
+    if (lutFor != strength) {
+        int32_t d;
+        for (d = -128; d < 128; d++) lut[d + 128] = (int8_t)eye_shift(d, strength);
+        lutFor = strength;
+    }
+    s_gStrength = strength;
+    s_gNSeg = s_gNRun = 0;
+    s_gSegDropped = s_gRunDropped = 0;
+    s_gPrevSegN = s_gPrevRunN = 0;
+
+    for (y = 0; y < h; y++) {
+        const int32_t pd = ground_depth(y);
+        const uint8_t *row, *st = s->stamp + y * w;
+        const int8_t *dp = s->dep + y * w;
+        int32_t x, runE = 0, runA = -1, runB = 0, nSpan = 0, k;
+        const RowSpans *rs;
+        int32_t full;
+
+        s_gCurSegN = s_gCurRunN = 0;
+        gpu_row_pieces(y, w, pd);
+
+        row = Stereo_PlainRow(fb, w, y, plain);
+        full = memcmp(row, st, (size_t)w) != 0;         /* something untracked drew here: every pixel */
+        rs = &s->spans[y];
+        nSpan = full ? 1 : (y <= SCREEN_HEIGHT ? rs->n : 0);
+        for (k = 0; k < nSpan; k++) {
+            const int32_t xa = full ? 0 : rs->x0[k], xb = full ? w : rs->x1[k];
+            runA = -1;
+            for (x = xa; x < xb; x++) {
+                const uint8_t c = row[x];
+                int32_t d, e;
+                if (c == st[x]) {
+                    if (dp[x] == STEREO_DEPTH_PITCH) continue;      /* the pitch: nothing to draw */
+                    d = dp[x];
+                } else {
+                    d = clamp_depth(g_stereoCfg.overlay);
+                }
+                if (d < s_gZRow[x]) {                               /* behind what stands there */
+                    if (runA >= 0) { gpu_run(y, runA, runB, runE); runA = -1; }
+                    continue;
+                }
+                e = lut[d + 128];
+                if (runA >= 0 && e != runE) { gpu_run(y, runA, runB, runE); runA = -1; }
+                if (runA < 0) { runA = x; runE = e; }
+                runB = x + 1;
+            }
+            if (runA >= 0) gpu_run(y, runA, runB, runE);
+        }
+        { int32_t t; for (t = 0; t < s_gCurSegN; t++) s_gPrevSeg[t] = s_gCurSeg[t]; s_gPrevSegN = s_gCurSegN;
+                     for (t = 0; t < s_gCurRunN; t++) s_gPrevRun[t] = s_gCurRun[t]; s_gPrevRunN = s_gCurRunN; }
+    }
+    if (s_gSegDropped)
+        return 0;                       /* the pitch itself did not fit: show this frame the old way */
+
+    /* furthest first: a counting sort on the shift */
+    memset(count, 0, sizeof count);
+    for (i = 0; i < s_gNRun; i++) {
+        int32_t b = s_gRun[i].e + GPU_E_RANGE;
+        if (b < 0) b = 0; if (b > 2 * GPU_E_RANGE) b = 2 * GPU_E_RANGE;
+        count[b + 1]++;
+    }
+    for (i = 1; i < 2 * GPU_E_RANGE + 2; i++) count[i] += count[i - 1];
+    for (i = 0; i < s_gNRun; i++) {
+        int32_t b = s_gRun[i].e + GPU_E_RANGE;
+        if (b < 0) b = 0; if (b > 2 * GPU_E_RANGE) b = 2 * GPU_E_RANGE;
+        s_gRunSorted[count[b]++] = s_gRun[i];
+    }
+    pl->bg = s->bg; pl->stamp = s->stamp; pl->dep = s->dep; pl->hudMask = s->hudMask; pl->rowHud = s->rowHud;
+    pl->seg = s_gSeg; pl->nSeg = s_gNSeg;
+    pl->run = s_gRunSorted; pl->nRun = s_gNRun;
+    pl->runsDropped = s_gRunDropped;
+    return 1;
+}
+
 #endif /* SWOS_SDL_BUILD */
 
 /* ---- the checker's hooks (3DS debug screen) ----------------------------------- */

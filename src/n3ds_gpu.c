@@ -45,11 +45,12 @@ static C3D_Tex s_texBg[2], s_texFg[2], s_texHud[2];
 static int32_t s_tw, s_th, s_fw, s_fh;  /* texture size, and the frame size they were made for */
 static int32_t s_set;                   /* which of the two texture sets this frame writes */
 static uint8_t s_zoff[64];              /* texel order inside an 8x8 tile (Z order) */
+static uint8_t s_zw[8][4];              /* 32-bit word of the pixel pair (row, pair) inside a tile */
 static uint16_t s_pal565[256], s_pal5551[256];
 static uint8_t s_tileUsed[128 * 64];    /* fg tiles a run touches: [tile row][tile col] */
 
 /* the log: where the time goes */
-static uint64_t s_tConv, s_tBuild, s_tWait;
+static uint64_t s_tConv, s_tBuild, s_tWait, s_tBg, s_tFg;
 static uint32_t s_frames, s_quads, s_fails;
 static uint64_t s_logT0;
 
@@ -67,6 +68,9 @@ static void make_zoff(void)
         for (x = 0; x < 8; x++)
             s_zoff[y * 8 + x] = (uint8_t)((x & 1) | ((y & 1) << 1) | ((x & 2) << 1) | ((y & 2) << 2) |
                                           ((x & 4) << 2) | ((y & 4) << 3));
+    for (y = 0; y < 8; y++)
+        for (x = 0; x < 8; x += 2)
+            s_zw[y][x >> 1] = (uint8_t)(s_zoff[y * 8 + x] >> 1);
 }
 
 static C3D_RenderTarget *make_target(gfx3dSide_t side)
@@ -161,34 +165,42 @@ void N3DSGpu_Shutdown(void)
 /* ---- the textures ---------------------------------------------------------------------- */
 
 /* The pitch plane, as RGB565, in 8x8 tiles. The columns past the right edge repeat the last
- * one (a shift can read past it; the left edge is repeated by the clamp). */
+ * one (a shift can read past it; the left edge is repeated by the clamp). Two pixels at a
+ * time: the Z order puts a pair of neighbours (x even, x odd) next to each other, so each pair
+ * is one 32-bit write. */
 static void convert_bg(C3D_Tex *tex, const uint8_t *bg, int32_t w, int32_t h)
 {
     const int32_t tilesW = s_tw >> 3, tilesY = (h + 7) >> 3, colsUsed = (w + PAD_COLS + 7) >> 3;
-    int32_t ty, tx, ry, rx;
+    int32_t ty, tx, ry, p;
     uint16_t *base = (uint16_t *)tex->data;
+    const uint16_t *pal = s_pal565;
     for (ty = 0; ty < tilesY; ty++) {
+        const uint8_t *rows[8];
+        for (ry = 0; ry < 8; ry++) {
+            int32_t y = (ty << 3) + ry;
+            if (y >= h) y = h - 1;
+            rows[ry] = bg + y * w;
+        }
         for (tx = 0; tx < colsUsed; tx++) {
-            uint16_t *dst = base + (ty * tilesW + tx) * 64;
+            uint32_t *dst = (uint32_t *)(base + (ty * tilesW + tx) * 64);
             const int32_t x0 = tx << 3;
-            for (ry = 0; ry < 8; ry++) {
-                int32_t y = (ty << 3) + ry;
-                const uint8_t *src;
-                const uint8_t *z = &s_zoff[ry << 3];
-                if (y >= h) y = h - 1;
-                src = bg + y * w;
-                if (x0 + 8 <= w) {
-                    dst[z[0]] = s_pal565[src[x0]];     dst[z[1]] = s_pal565[src[x0 + 1]];
-                    dst[z[2]] = s_pal565[src[x0 + 2]]; dst[z[3]] = s_pal565[src[x0 + 3]];
-                    dst[z[4]] = s_pal565[src[x0 + 4]]; dst[z[5]] = s_pal565[src[x0 + 5]];
-                    dst[z[6]] = s_pal565[src[x0 + 6]]; dst[z[7]] = s_pal565[src[x0 + 7]];
-                } else {
-                    for (rx = 0; rx < 8; rx++) {
-                        int32_t x = x0 + rx;
-                        if (x >= w) x = w - 1;
-                        dst[z[rx]] = s_pal565[src[x]];
-                    }
+            if (x0 + 8 <= w) {
+                for (ry = 0; ry < 8; ry++) {
+                    const uint8_t *s = rows[ry] + x0;
+                    const uint8_t *zw = s_zw[ry];
+                    dst[zw[0]] = (uint32_t)pal[s[0]] | ((uint32_t)pal[s[1]] << 16);
+                    dst[zw[1]] = (uint32_t)pal[s[2]] | ((uint32_t)pal[s[3]] << 16);
+                    dst[zw[2]] = (uint32_t)pal[s[4]] | ((uint32_t)pal[s[5]] << 16);
+                    dst[zw[3]] = (uint32_t)pal[s[6]] | ((uint32_t)pal[s[7]] << 16);
                 }
+            } else {
+                for (ry = 0; ry < 8; ry++)
+                    for (p = 0; p < 4; p++) {
+                        int32_t xa = x0 + 2 * p, xb = xa + 1;
+                        if (xa >= w) xa = w - 1;
+                        if (xb >= w) xb = w - 1;
+                        dst[s_zw[ry][p]] = (uint32_t)pal[rows[ry][xa]] | ((uint32_t)pal[rows[ry][xb]] << 16);
+                    }
             }
         }
     }
@@ -297,10 +309,13 @@ static inline void quad(C3D_Tex *tex, int32_t tw, int32_t th, float x, float y, 
     C2D_DrawParams p;
     sub.width = (u16)(qw > 0 ? qw : 1);
     sub.height = (u16)(qh > 0 ? qh : 1);
-    sub.left = u0 / (float)tw;
-    sub.right = u1 / (float)tw;
-    sub.top = 1.0f - v0 / (float)th;
-    sub.bottom = 1.0f - v1 / (float)th;
+    /* Checked on hardware (stereo3d-71): with the obvious coordinates the content of every
+     * rectangle came out turned 180 degrees (the score panel upside down and mirrored, the
+     * statistics list in reverse order). So the corners are swapped. */
+    sub.left = u1 / (float)tw;
+    sub.right = u0 / (float)tw;
+    sub.top = 1.0f - v1 / (float)th;
+    sub.bottom = 1.0f - v0 / (float)th;
     im.tex = tex;
     im.subtex = &sub;
     p.pos.x = x; p.pos.y = y; p.pos.w = qw; p.pos.h = qh;
@@ -359,23 +374,24 @@ static void log_window(void)
     {
         const uint32_t n = s_frames;
         #define MS10(t) ((unsigned)((uint64_t)(t) * 10 / 268111 / n))
-        fprintf(stderr, "[gpu] %u frames in %u ms: convert %u.%u ms, build+submit %u.%u ms, wait %u.%u ms, "
+        fprintf(stderr, "[gpu] %u frames in %u ms: convert %u.%u ms (pitch %u.%u, frame+hud %u.%u), build+submit %u.%u ms, wait %u.%u ms, "
                         "%u quads/frame (both eyes), gpu %d.%d ms, %u fallbacks\n",
                 n, (unsigned)(now - s_logT0),
-                MS10(s_tConv) / 10, MS10(s_tConv) % 10, MS10(s_tBuild) / 10, MS10(s_tBuild) % 10,
+                MS10(s_tConv) / 10, MS10(s_tConv) % 10, MS10(s_tBg) / 10, MS10(s_tBg) % 10,
+                MS10(s_tFg) / 10, MS10(s_tFg) % 10, MS10(s_tBuild) / 10, MS10(s_tBuild) % 10,
                 MS10(s_tWait) / 10, MS10(s_tWait) % 10, (unsigned)(s_quads / n),
                 (int)C3D_GetProcessingTime(), (int)(C3D_GetProcessingTime() * 10.0f) % 10, (unsigned)s_fails);
         #undef MS10
     }
     fflush(stderr);
-    s_tConv = s_tBuild = s_tWait = 0; s_frames = s_quads = s_fails = 0; s_logT0 = now;
+    s_tConv = s_tBuild = s_tWait = s_tBg = s_tFg = 0; s_frames = s_quads = s_fails = 0; s_logT0 = now;
 }
 
 /* Draws the match frame. 1: drawn and shown; 0: nothing was drawn, the caller draws it. */
 int32_t N3DSGpu_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba, int32_t strength)
 {
     StereoGpuPlan pl;
-    uint64_t t0, t1, t2;
+    uint64_t t0, t1, t2, tB;
     int32_t x, eyes;
 
     if (!g_n3dsGpu || !init_once())
@@ -391,9 +407,12 @@ int32_t N3DSGpu_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *
     }
     s_set ^= 1;
     convert_bg(&s_texBg[s_set], pl.bg, w, h);
+    tB = svcGetSystemTick();
     convert_fg(&s_texFg[s_set], fb, &pl, w, h);
     convert_hud(&s_texHud[s_set]);
     t1 = svcGetSystemTick();
+    s_tBg += tB - t0;
+    s_tFg += t1 - tB;
 
     C3D_FrameBegin(0);
     t2 = svcGetSystemTick();

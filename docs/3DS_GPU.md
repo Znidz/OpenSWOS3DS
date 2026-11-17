@@ -34,3 +34,13 @@ old way. R + SELECT in a match switches the GPU path off and on; the `[fps]` lin
 compare), thin lines, anything flickering at piece edges, HUD placement, memory, and that the menu <-> match
 switch is clean. Not yet moved: the stands/people could be drawn as fewer, taller pieces; the plane conversion
 could skip rows that did not change.
+
+## First hardware run (stereo3d-71, 2026-11-17)
+
+Old 3DS, a match: game clock 34-37 ticks/s (was 27-30 on the pixel path), 33-36 shown/s, 0 fallbacks, ~250 quads
+a frame, GPU 1-2 ms, building the quads 1.2 ms. **The cost is the CPU's texture conversion: 11.8 ms a frame**
+(the pitch plane is 454x272 every frame because the camera scrolls). Fixed for the next build: two pixels per
+32-bit write, timing split pitch / frame+HUD in the `[gpu]` line. Also seen: every rectangle's content came out
+turned 180 degrees (score panel upside down and mirrored, statistics list reversed): the corners are now swapped.
+Still to come if the conversion stays the bottleneck: a cached world-sized pitch texture scrolled by UV, with only
+the animated parts (crowd, ads) re-uploaded.

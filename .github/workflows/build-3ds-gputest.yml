@@ -1,0 +1,174 @@
+# Builds the GPU stereo test (tools/3ds_gputest, docs/3DS_GPU_TEST.md) and publishes the .cia and
+# .3dsx as a release named gputest-<run>, so it installs from a phone like the game does.
+name: Build 3DS GPU test
+
+on:
+  push:
+    branches: [stereo3d]
+    paths:
+      - 'tools/3ds_gputest/**'
+      - '.github/workflows/build-3ds-gputest.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install git
+        run: |
+          apt-get update > /dev/null && apt-get install -y --no-install-recommends git ca-certificates > /dev/null
+
+      - uses: actions/checkout@v4
+
+      - name: Install 3DS libraries
+        run: |
+          retry() {
+            for i in 1 2 3 4 5; do
+              "$@" && return 0
+              echo "::warning::Attempt $i failed: $*"
+              sleep $((i * 15))
+            done
+            return 1
+          }
+          retry apt-get install -y --no-install-recommends jq unzip curl make
+          # citro3d and citro2d come with the 3ds-dev group; the image may not have them
+          if [ ! -f "$DEVKITPRO/libctru/lib/libcitro2d.a" ]; then
+            retry dkp-pacman -Sy --needed --noconfirm 3ds-dev \
+              || { echo "::error::could not install 3ds-dev"; exit 1; }
+          fi
+          echo "::notice::libs: $(ls "$DEVKITPRO/libctru/lib" | tr '\n' ' ')"
+
+      - name: Get makerom and bannertool
+        id: tools
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "$HOME/tools" && cd "$HOME/tools"
+          apt-get install -y --no-install-recommends git make g++ gcc > /dev/null
+
+          # Copies the first file named $2* under $1 that actually runs on this
+          # machine to $3. Zips often hold builds for several systems, and one
+          # built for another system fails with exit code 126 or 127.
+          pick_runnable() {
+            for f in $(find "$1" -type f -name "$2*"); do
+              # Only consider Linux programs, never source or text files
+              head -c 4 "$f" | grep -q "ELF" || continue
+              chmod +x "$f"
+              rc=0
+              out=$("$f" 2>&1) || rc=$?
+              if echo "$out" | grep -qE "GLIBC|cannot open shared object"; then rc=127; fi
+              if [ $rc -ne 126 ] && [ $rc -ne 127 ]; then
+                echo "::notice::Using $f for $2"
+                cp "$f" "$3"
+                return 0
+              fi
+              echo "Cannot run $f (exit $rc)"
+            done
+            return 1
+          }
+
+          # Prints the first release asset of repo $1 whose name matches $2
+          find_asset() {
+            code=$(curl -sSL -o releases.json -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$1/releases?per_page=50")
+            if [ "$code" != "200" ]; then echo "::warning::$1 releases: HTTP $code" >> diag.txt; return 1; fi
+            echo "::notice::Assets in $1: $(jq -r '[.[].assets[].name] | join(", ")' releases.json | cut -c1-500)" >> diag.txt
+            jq -r --arg p "$2" '[.[].assets[] | select(.name | test($p; "i"))][0].browser_download_url // empty' releases.json
+          }
+
+          # makerom: build from source so it matches this machine's libraries
+          # (prebuilt releases need a newer glibc), with a prebuilt fallback
+          if git clone --depth 1 https://github.com/3DSGuy/Project_CTR.git; then
+            (cd Project_CTR/makerom && make deps > /dev/null && make > /dev/null) \
+              || echo "::warning::makerom source build failed"
+            pick_runnable Project_CTR/makerom makerom ./makerom || true
+          fi
+          if [ ! -s makerom ]; then
+            url=$(find_asset 3DSGuy/Project_CTR '^makerom.*(ubuntu|linux)[^a]*\.zip$') || true
+            cat diag.txt 2>/dev/null || true; rm -f diag.txt
+            if echo "$url" | grep -q '^https'; then
+              curl -fsSL -o makerom.zip "$url" && unzip -o -q makerom.zip -d makerom_files
+              pick_runnable makerom_files makerom ./makerom || true
+            fi
+          fi
+
+          # bannertool: prebuilt release from known repos, otherwise build from source
+          for repo in Steveice10/bannertool Epicpkmn11/bannertool diasurgical/bannertool; do
+            [ -s bannertool ] && break
+            url=$(find_asset "$repo" '^bannertool.*\.zip$') || true
+            cat diag.txt 2>/dev/null || true; rm -f diag.txt
+            if echo "$url" | grep -q '^https'; then
+              rm -rf bt && curl -fsSL -o bannertool.zip "$url" && unzip -o -q bannertool.zip -d bt
+              pick_runnable bt bannertool ./bannertool || true
+            fi
+          done
+          if [ ! -s bannertool ]; then
+            echo "::warning::No runnable prebuilt bannertool found, building from source"
+            for repo in Steveice10/bannertool Epicpkmn11/bannertool diasurgical/bannertool; do
+              git clone --depth 1 --recursive "https://github.com/$repo.git" bt_src 2>/dev/null && break
+            done
+            (cd bt_src && make) || echo "::error::bannertool source build failed"
+            pick_runnable bt_src bannertool ./bannertool || true
+          fi
+
+          chmod +x makerom bannertool 2>/dev/null || true
+          [ -s makerom ] || { echo "::error::makerom unavailable, CIA will not be built"; exit 1; }
+          [ -s bannertool ] || { echo "::error::bannertool unavailable, CIA will not be built"; exit 1; }
+          ls -l makerom bannertool
+
+      - name: Build
+        working-directory: tools/3ds_gputest
+        run: |
+          set +e +o pipefail
+          export PATH="$DEVKITARM/bin:$PATH"
+          make -j"$(nproc)" > build.log 2>&1
+          rc=$?
+          tail -n 40 build.log
+          if [ $rc -ne 0 ] || [ ! -f OpenSWOSGpuTest.3dsx ]; then
+            { grep -E "error|undefined reference|No such file|\*\*\*" build.log | head -n 25
+              tail -n 6 build.log; } | while IFS= read -r line; do
+              echo "::error::$(echo "$line" | cut -c1-400)"
+            done
+            exit 1
+          fi
+
+      - name: Package CIA
+        if: steps.tools.outcome == 'success'
+        continue-on-error: true
+        working-directory: tools/3ds_gputest
+        run: |
+          export PATH="$DEVKITARM/bin:$PATH"
+          make cia MAKEROM="$HOME/tools/makerom" BANNERTOOL="$HOME/tools/bannertool" > cia.log 2>&1 \
+            || { cat cia.log; tail -n 8 cia.log | while IFS= read -r l; do echo "::error::CIA: $l"; done; exit 1; }
+          cat cia.log
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd tools/3ds_gputest
+          TAG="gputest-${GITHUB_RUN_NUMBER}"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          CIA_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/OpenSWOSGpuTest.cia"
+          if pip install --quiet --break-system-packages segno >/dev/null 2>&1 || pip install --quiet segno >/dev/null 2>&1; then
+            python3 -c "import segno,sys; segno.make(sys.argv[1], error='m').save('QR.png', scale=8, border=4)" "$CIA_URL" 2>/dev/null || true
+          fi
+          QR="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/QR.png"
+          BODY="GPU stereo test, built from ${GITHUB_SHA}. It installs beside the game (its own title).\n\nOn the 3DS open FBI, Remote Install, Scan QR Code, and scan this:\n\n![QR code](${QR})\n\nOr copy OpenSWOSGpuTest.3dsx to sdmc:/3ds/ and start it from the Homebrew Launcher. It writes sdmc:/3ds/OpenSWOS3D/gputest.log; send that file back. Buttons are listed in docs/3DS_GPU_TEST.md."
+          REL=$(curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" "$API/releases" \
+            -d "{\"tag_name\":\"$TAG\",\"target_commitish\":\"$GITHUB_SHA\",\"name\":\"GPU stereo test $GITHUB_RUN_NUMBER\",\"body\":\"$BODY\",\"prerelease\":true}")
+          UPLOAD=$(echo "$REL" | jq -r .upload_url | sed 's/{.*//')
+          for f in OpenSWOSGpuTest.cia OpenSWOSGpuTest.3dsx QR.png; do
+            [ -f "$f" ] || { echo "::warning::$f was not built"; continue; }
+            curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$f" "$UPLOAD?name=$f" > /dev/null
+          done

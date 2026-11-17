@@ -51,6 +51,16 @@ int  CrtEffects_Active(void);
  * unaffected by the renderer's logical size. No-op when nothing is enabled. */
 void CrtEffects_Apply(SDL_Renderer *renderer);
 
+/* The finished mask as w*h ARGB8888 pixels (multiply it over the frame). No renderer needed:
+ * the 3DS builds its own texture from this. */
+void CrtEffects_Fill(const CrtEffectsConfig *cfg, int w, int h, uint32_t *argb, int pitchBytes);
+
+#ifdef __3DS__
+/* src/n3ds_gpu.c: the filter the 3DS draws over a match (the pause screen edits it live) */
+void N3DSCrt_Set(const CrtEffectsConfig *c);
+void N3DSCrt_Get(CrtEffectsConfig *c);
+#endif
+
 /* Drop the cached texture (renderer teardown). */
 void CrtEffects_Shutdown(void);
 

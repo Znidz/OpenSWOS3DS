@@ -44,3 +44,16 @@ a frame, GPU 1-2 ms, building the quads 1.2 ms. **The cost is the CPU's texture 
 corners were swapped in 72 by mistake and put back in 73.)
 Still to come if the conversion stays the bottleneck: a cached world-sized pitch texture scrolled by UV, with only
 the animated parts (crowd, ads) re-uploaded.
+
+## Build 75: filtered pitch, and the CRT filter with a pause-screen switch
+
+- **Pitch drawn filtered.** The 454x272 pitch plane is scaled to 400x240; nearest sampling dropped columns and rows
+  (broken pitch lines, moire on the grass's fine pattern). The pitch texture now uses linear filtering; sprites stay crisp.
+  The pixel path's "bright pixel wins" rule is not used on the GPU path.
+- **CRT filter** = the ini's `[video] crt_mask` (off | scanlines | aperture | slot), `crt_mask_strength`, `crt_vignette`,
+  `crt_corners` (same keys and maths as the desktop build: `CrtEffects_Fill`, shared with `crt_effects.c`). One 400x240 mask
+  texture, multiplied over each eye (`C3D_AlphaBlend` dst*src), rebuilt only when a setting changes. Matches drawn by the
+  GPU only (not menus, not the pixel fallback).
+- **Pause screen** (`src/n3ds_crtmenu.c`, bottom screen while a match is paused with START): touch OFF / SCANLINES / APERTURE /
+  SLOT, drag the STRENGTH / VIGNETTE / CORNERS sliders (tap a name to switch it off / on), or D-pad (up/down row, left/right
+  change). Applies at once; resuming writes SWOS.ini (`Settings_Save` through `g_arcadeOpts`).

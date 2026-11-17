@@ -116,7 +116,7 @@ static int32_t textures_for(int32_t w, int32_t h)
         /* The pitch is scaled down (454 x 272 -> 400 x 240): filtered, so a one-pixel line stays a
          * line (nearest sampling dropped columns and rows, breaking lines and turning the grass's
          * fine pattern into moire). What stands on it stays crisp. */
-        if (!tex_make(&s_texBg[i], tw, th, GPU_RGB565, 0) || !tex_make(&s_texFg[i], tw, th, GPU_RGBA5551, 0) ||
+        if (!tex_make(&s_texBg[i], tw, th, GPU_RGB565, 1) || !tex_make(&s_texFg[i], tw, th, GPU_RGBA5551, 0) ||
             !tex_make(&s_texHud[i], HUD_W, HUD_H, GPU_RGBA5551, 0)) {
             free_textures();
             return 0;

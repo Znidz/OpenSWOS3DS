@@ -40,7 +40,7 @@ could skip rows that did not change.
 Old 3DS, a match: game clock 34-37 ticks/s (was 27-30 on the pixel path), 33-36 shown/s, 0 fallbacks, ~250 quads
 a frame, GPU 1-2 ms, building the quads 1.2 ms. **The cost is the CPU's texture conversion: 11.8 ms a frame**
 (the pitch plane is 454x272 every frame because the camera scrolls). Fixed for the next build: two pixels per
-32-bit write, timing split pitch / frame+HUD in the `[gpu]` line. Also seen: every rectangle's content came out
-turned 180 degrees (score panel upside down and mirrored, statistics list reversed): the corners are now swapped.
+32-bit write, timing split pitch / frame+HUD in the `[gpu]` line. (The video of 71 looked 180 degrees turned only because the phone filming the screen was upside down; the
+corners were swapped in 72 by mistake and put back in 73.)
 Still to come if the conversion stays the bottleneck: a cached world-sized pitch texture scrolled by UV, with only
 the animated parts (crowd, ads) re-uploaded.

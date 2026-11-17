@@ -44,6 +44,12 @@ void    N3DSScr_TouchToMenu(int32_t tx, int32_t ty, int32_t *mx, int32_t *my);
 extern int32_t g_n3dsGpu;                        /* on: draw matches that way (R + SELECT in a match) */
 int32_t N3DSGpu_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *rgba, int32_t strength);
 void    N3DSGpu_Shutdown(void);
+/* The CRT filter drawn over the GPU's match picture (crt_effects.h; src/n3ds_crtmenu.c is its pause screen) */
+void    N3DSCrtMenu_Sync(void);                  /* once a frame: loads the ini's settings the first time */
+void    N3DSCrtMenu_Enter(void);                 /* the match was paused */
+void    N3DSCrtMenu_Leave(void);                 /* resumed: saves what changed to SWOS.ini */
+void    N3DSCrtMenu_Draw(void);                  /* the bottom screen while paused */
+void    N3DSCrtMenu_Input(uint32_t held, uint32_t down, int32_t tx, int32_t ty);
 
 /* src/n3ds_debug.c: the 3D checker and the tuning page (L + SELECT in a match) */
 void    N3DSDbg_Open(void);

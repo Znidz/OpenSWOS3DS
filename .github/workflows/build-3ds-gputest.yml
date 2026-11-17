@@ -161,7 +161,8 @@ jobs:
           if pip install --quiet --break-system-packages segno >/dev/null 2>&1 || pip install --quiet segno >/dev/null 2>&1; then
             python3 -c "import segno,sys; segno.make(sys.argv[1], error='m').save('QR.png', scale=8, border=4)" "$CIA_URL" 2>/dev/null || true
           fi
-          QR="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/QR.png"
+          QR="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${CIA_URL}"
+          [ -f QR.png ] && QR="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/QR.png"
           BODY="GPU stereo test, built from ${GITHUB_SHA}. It installs beside the game (its own title).\n\nOn the 3DS open FBI, Remote Install, Scan QR Code, and scan this:\n\n![QR code](${QR})\n\nOr copy OpenSWOSGpuTest.3dsx to sdmc:/3ds/ and start it from the Homebrew Launcher. It writes sdmc:/3ds/OpenSWOS3D/gputest.log; send that file back. Buttons are listed in docs/3DS_GPU_TEST.md."
           REL=$(curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" "$API/releases" \
             -d "{\"tag_name\":\"$TAG\",\"target_commitish\":\"$GITHUB_SHA\",\"name\":\"GPU stereo test $GITHUB_RUN_NUMBER\",\"body\":\"$BODY\",\"prerelease\":true}")

@@ -30,7 +30,6 @@
 #include "n3ds.h"
 #include "stereo.h"
 #include "display.h"
-#include "crt_effects.h"
 
 #define TOP_W   400
 #define TOP_H   240
@@ -38,7 +37,6 @@
 #define HUD_W   256
 #define HUD_H   128
 
-int32_t g_n3dsGpuLayers;               /* 0 all, 1 no HUD, 2 pitch plane only, 3 foreground only */
 int32_t g_n3dsGpu = 1;                  /* R + SELECT in a match switches it off and on */
 
 static int32_t s_state;                 /* 0 not tried, 1 ready, -1 failed */
@@ -82,12 +80,12 @@ static C3D_RenderTarget *make_target(gfx3dSide_t side)
     return t;
 }
 
-static int32_t tex_make(C3D_Tex *t, int32_t w, int32_t h, GPU_TEXCOLOR fmt, int32_t linear)
+static int32_t tex_make(C3D_Tex *t, int32_t w, int32_t h, GPU_TEXCOLOR fmt)
 {
     if (!C3D_TexInit(t, (u16)w, (u16)h, fmt))
         return 0;
     memset(t->data, 0, (size_t)w * (size_t)h * 2);
-    C3D_TexSetFilter(t, linear ? GPU_LINEAR : GPU_NEAREST, linear ? GPU_LINEAR : GPU_NEAREST);
+    C3D_TexSetFilter(t, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(t, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     return 1;
 }
@@ -114,11 +112,8 @@ static int32_t textures_for(int32_t w, int32_t h)
     if (tw > 1024 || th > 1024 || tw / 8 > 128 || th / 8 > 64)
         return 0;
     for (i = 0; i < 2; i++)
-        /* The pitch is scaled down (454 x 272 -> 400 x 240): filtered, so a one-pixel line stays a
-         * line (nearest sampling dropped columns and rows, breaking lines and turning the grass's
-         * fine pattern into moire). What stands on it stays crisp. */
-        if (!tex_make(&s_texBg[i], tw, th, GPU_RGB565, 1) || !tex_make(&s_texFg[i], tw, th, GPU_RGBA5551, 0) ||
-            !tex_make(&s_texHud[i], HUD_W, HUD_H, GPU_RGBA5551, 0)) {
+        if (!tex_make(&s_texBg[i], tw, th, GPU_RGB565) || !tex_make(&s_texFg[i], tw, th, GPU_RGBA5551) ||
+            !tex_make(&s_texHud[i], HUD_W, HUD_H, GPU_RGBA5551)) {
             free_textures();
             return 0;
         }
@@ -315,8 +310,6 @@ static inline void quad(C3D_Tex *tex, int32_t tw, int32_t th, float x, float y, 
     s_quads++;
 }
 
-static void crt_draw(void);
-
 static void draw_eye(int32_t eye, int32_t w, int32_t h, const StereoGpuPlan *pl, int32_t strength)
 {
     /* eye: -1 left, +1 right (the plan's e is the LEFT eye's move: right eye is the opposite) */
@@ -328,7 +321,7 @@ static void draw_eye(int32_t eye, int32_t w, int32_t h, const StereoGpuPlan *pl,
     C2D_TargetClear(s_tgt[eye < 0 ? 0 : 1], C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(s_tgt[eye < 0 ? 0 : 1]);
 
-    for (i = 0; i < pl->nSeg && g_n3dsGpuLayers != 3; i++) {   /* the pitch plane */
+    for (i = 0; i < pl->nSeg; i++) {                        /* the pitch plane */
         const StereoSeg *g = &pl->seg[i];
         const int32_t a = out_row(g->y0, h), b = out_row(g->y1, h);
         const float e = (float)(g->e * sgn);
@@ -336,7 +329,7 @@ static void draw_eye(int32_t eye, int32_t w, int32_t h, const StereoGpuPlan *pl,
         quad(bg, s_tw, s_th, (float)g->x0 * sx, (float)a, (float)(g->x1 - g->x0) * sx, (float)(b - a),
              (float)g->x0 - e, (float)a * sy, (float)g->x1 - e, (float)b * sy);
     }
-    for (i = 0; i < pl->nRun && g_n3dsGpuLayers != 2; i++) {   /* what stands on it, furthest first */
+    for (i = 0; i < pl->nRun; i++) {                        /* what stands on it, furthest first */
         const StereoRun *r = &pl->run[i];
         const int32_t a = out_row(r->y0, h), b = out_row(r->y1, h);
         const float e = (float)(r->e * sgn);
@@ -348,7 +341,7 @@ static void draw_eye(int32_t eye, int32_t w, int32_t h, const StereoGpuPlan *pl,
         const StereoHudRect *hr;
         const int32_t n = Stereo_HudRects(&hr);
         const int32_t shift = strength > 0 ? Stereo_EyeShiftFor(Stereo_HudDepth(), strength) : 0;
-        for (i = 0; i < n && i < s_hudCount && g_n3dsGpuLayers == 0; i++) {
+        for (i = 0; i < n && i < s_hudCount; i++) {
             const int32_t ax = hr[i].x * TOP_W / w, ay = hr[i].y * TOP_H / h;
             if (s_hudPos[i].x < 0) continue;
             quad(hud, HUD_W, HUD_H, (float)(ax + shift * sgn), (float)ay, (float)hr[i].w, (float)hr[i].h,
@@ -356,62 +349,6 @@ static void draw_eye(int32_t eye, int32_t w, int32_t h, const StereoGpuPlan *pl,
                  (float)(s_hudPos[i].x + hr[i].w), (float)(s_hudPos[i].y + hr[i].h));
         }
     }
-    crt_draw();
-}
-
-
-/* ---- the CRT filter (the ini's crt_* settings; the pause screen changes them live) ---------- */
-
-static CrtEffectsConfig s_crt;
-static int32_t s_crtVer, s_crtBuilt = -1;
-static C3D_Tex s_texCrt;
-static int32_t s_crtTex;
-
-void N3DSCrt_Set(const CrtEffectsConfig *c) { s_crt = *c; s_crtVer++; }
-void N3DSCrt_Get(CrtEffectsConfig *c)       { *c = s_crt; }
-
-static int32_t crt_active(void)
-{
-    return s_crt.mask != CRT_MASK_OFF || s_crt.vignette > 0 || s_crt.corners > 0;
-}
-
-/* The mask is built at the screen's own size (400 x 240) so the grille lands on whole pixels, and
- * multiplied over the finished picture with one rectangle per eye. Rebuilt only when a setting changes. */
-static void crt_build(void)
-{
-    static uint32_t *buf;
-    int32_t tx, ty, rx, ry;
-    uint16_t *base;
-    if (!buf) buf = (uint32_t *)malloc((size_t)TOP_W * TOP_H * 4);
-    if (!buf) { s_crtBuilt = s_crtVer; return; }
-    if (!s_crtTex) {
-        if (!tex_make(&s_texCrt, 512, 256, GPU_RGB565, 0)) { s_crtBuilt = s_crtVer; return; }
-        s_crtTex = 1;
-    }
-    CrtEffects_Fill(&s_crt, TOP_W, TOP_H, buf, TOP_W * 4);
-    base = (uint16_t *)s_texCrt.data;
-    for (ty = 0; ty < TOP_H / 8; ty++)
-        for (tx = 0; tx < TOP_W / 8; tx++) {
-            uint16_t *dst = base + (ty * (512 / 8) + tx) * 64;
-            for (ry = 0; ry < 8; ry++)
-                for (rx = 0; rx < 8; rx++) {
-                    const uint32_t c = buf[((ty << 3) + ry) * TOP_W + (tx << 3) + rx];
-                    dst[s_zoff[ry * 8 + rx]] = (uint16_t)((((c >> 16) & 0xFF) >> 3 << 11) | (((c >> 8) & 0xFF) >> 2 << 5) | ((c & 0xFF) >> 3));
-                }
-        }
-    C3D_TexFlush(&s_texCrt);
-    s_crtBuilt = s_crtVer;
-}
-
-static void crt_draw(void)
-{
-    if (!crt_active() || !s_crtTex) return;
-    C2D_Flush();
-    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_DST_COLOR, GPU_ZERO, GPU_ZERO, GPU_ONE);   /* dst * mask */
-    quad(&s_texCrt, 512, 256, 0.0f, 0.0f, (float)TOP_W, (float)TOP_H, 0.0f, 0.0f, (float)TOP_W, (float)TOP_H);
-    C2D_Flush();
-    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
-                   GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);                                    /* citro2d's own */
 }
 
 static void log_window(void)
@@ -458,8 +395,6 @@ int32_t N3DSGpu_Present(const uint8_t *fb, int32_t w, int32_t h, const uint8_t *
     convert_hud(&s_texHud[s_set]);
     t1 = svcGetSystemTick();
 
-    if (crt_active() && s_crtBuilt != s_crtVer)
-        crt_build();
     C3D_FrameBegin(0);
     t2 = svcGetSystemTick();
     eyes = strength > 0 ? 2 : 1;

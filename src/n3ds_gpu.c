@@ -35,8 +35,8 @@
 #define TOP_W   400
 #define TOP_H   240
 #define PAD_COLS 16                     /* the pitch plane's last column repeated, for shifts past the edge */
-#define HUD_W   256
-#define HUD_H   128
+#define HUD_W   512             /* the HUD atlas: the result panel's grid, names and scorers all */
+#define HUD_H   256             /* have to fit, or the ones that do not are left out */
 
 int32_t g_n3dsGpu = 1;                  /* R + SELECT in a match switches it off and on */
 
@@ -247,7 +247,7 @@ static void convert_fg(C3D_Tex *tex, const uint8_t *fb, const StereoGpuPlan *pl,
 /* The HUD sprites packed into one small atlas (shelf by shelf); returns where each went. */
 typedef struct { int16_t x, y; } AtlasPos;
 static AtlasPos s_hudPos[64];
-static int32_t  s_hudCount;
+static int32_t  s_hudCount, s_hudSkipped;
 
 static void convert_hud(C3D_Tex *tex)
 {
@@ -256,13 +256,13 @@ static void convert_hud(C3D_Tex *tex)
     int32_t n = Stereo_HudRects(&hr), i, x = 0, y = 0, shelf = 0, usedH = 0, px, py, ty, tx, ry, rx;
     uint16_t *base = (uint16_t *)tex->data;
 
-    s_hudCount = 0;
+    s_hudCount = 0; s_hudSkipped = 0;
     if (n > 64) n = 64;
     for (i = 0; i < n; i++) {
         const int32_t rw = hr[i].w, rh = hr[i].h;
-        if (rw > HUD_W || rh > HUD_H) { s_hudPos[i].x = -1; s_hudCount = i + 1; continue; }
+        if (rw > HUD_W || rh > HUD_H) { s_hudPos[i].x = -1; s_hudCount = i + 1; s_hudSkipped++; continue; }
         if (x + rw > HUD_W) { x = 0; y += shelf; shelf = 0; }
-        if (y + rh > HUD_H) { s_hudPos[i].x = -1; s_hudCount = i + 1; continue; }
+        if (y + rh > HUD_H) { s_hudPos[i].x = -1; s_hudCount = i + 1; s_hudSkipped++; continue; }
         s_hudPos[i].x = (int16_t)x; s_hudPos[i].y = (int16_t)y;
         for (py = 0; py < rh; py++)
             for (px = 0; px < rw; px++) {
@@ -422,11 +422,11 @@ static void log_window(void)
         const uint32_t n = s_frames;
         #define MS10(t) ((unsigned)((uint64_t)(t) * 10 / 268111 / n))
         fprintf(stderr, "[gpu] %u frames in %u ms: convert %u.%u ms, build+submit %u.%u ms, wait %u.%u ms, "
-                        "%u quads/frame (both eyes), gpu %d.%d ms, %u fallbacks\n",
+                        "%u quads/frame (both eyes), gpu %d.%d ms, %u fallbacks, %d HUD sprites left out\n",
                 n, (unsigned)(now - s_logT0),
                 MS10(s_tConv) / 10, MS10(s_tConv) % 10, MS10(s_tBuild) / 10, MS10(s_tBuild) % 10,
                 MS10(s_tWait) / 10, MS10(s_tWait) % 10, (unsigned)(s_quads / n),
-                (int)C3D_GetProcessingTime(), (int)(C3D_GetProcessingTime() * 10.0f) % 10, (unsigned)s_fails);
+                (int)C3D_GetProcessingTime(), (int)(C3D_GetProcessingTime() * 10.0f) % 10, (unsigned)s_fails, (int)s_hudSkipped);
         #undef MS10
     }
     fflush(stderr);

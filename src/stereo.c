@@ -35,7 +35,7 @@
 /* Screen-pinned HUD sprites (score panel, names, numbers) are not part of the 3D scene: they are
  * kept apart here and drawn 1:1 over the scaled picture, so their small text is not resampled. */
 #define STEREO_MAX_HUD   64
-#define STEREO_HUD_POOL  32768
+#define STEREO_HUD_POOL  65536
 static StereoHudRect s_hudRect[STEREO_MAX_HUD];
 static uint8_t       s_hudPoolBuf[STEREO_HUD_POOL];
 static int32_t       s_hudN, s_hudUsed, s_hudCur = -1;
